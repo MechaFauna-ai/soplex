@@ -28,6 +28,10 @@
 
 // Defining the static members of the Param class
 
+#include <cstdint>
+#include <cstring>
+#include <type_traits>
+
 namespace soplex
 {
 
@@ -132,6 +136,27 @@ inline bool GErel(R a, S b, T eps)
 // Instantiation for Real
 inline Real spxLdexp(Real x, int exp)
 {
+   // fast path for double: if x is a normal number and x * 2^exp is a normal number, too, the result is obtained exactly
+   // by adding exp to the exponent field, which is what ldexp() computes; all other cases (zero, subnormal, infinite,
+   // NaN, overflow, underflow) are handled by ldexp()
+   if(std::is_same<Real, double>::value && exp > -2048 && exp < 2048)
+   {
+      const double d = double(x);
+      uint64_t bits;
+      std::memcpy(&bits, &d, sizeof(uint64_t));
+      const int biasedexp = int((bits >> 52) & 0x7ff);
+      const int newexp = biasedexp + exp;
+
+      if(biasedexp != 0 && biasedexp != 0x7ff && newexp > 0 && newexp < 0x7ff)
+      {
+         double result;
+         bits = (bits & ~(uint64_t(0x7ff) << 52)) | (uint64_t(newexp) << 52);
+         std::memcpy(&result, &bits, sizeof(uint64_t));
+         assert(result == std::ldexp(d, exp));
+         return Real(result);
+      }
+   }
+
    return std::ldexp(x, exp);
 }
 
