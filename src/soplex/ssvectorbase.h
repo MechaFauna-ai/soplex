@@ -29,6 +29,8 @@
 #define _SSVECTORBASE_H_
 
 #include <assert.h>
+#include <cstdint>
+#include <cstring>
 
 #include "soplex/spxdefines.h"
 #include "soplex/vectorbase.h"
@@ -39,6 +41,68 @@
 
 namespace soplex
 {
+
+/// scans the dense array \p val of length \p d, stores the indices of the entries with absolute value > \p eps in
+/// \p idx in increasing order, sets all other entries to +0, and returns the number of stored indices
+template < class R >
+inline int ssvectorSetupScan(R* val, int* idx, int d, R eps)
+{
+   int num = 0;
+
+   for(int i = 0; i < d; ++i)
+   {
+      if(isNotZero(val[i], eps))
+         idx[num++] = i;
+      else
+         val[i] = +R(0);
+   }
+
+   return num;
+}
+
+/// double version of ssvectorSetupScan(): same result, but skips blocks of entries that are already +0 (all bits zero)
+/// without testing or writing them one by one; this avoids most of the work for sparse vectors
+inline int ssvectorSetupScan(double* val, int* idx, int d, double eps)
+{
+   int num = 0;
+   int i = 0;
+
+   for(; i + 4 <= d; i += 4)
+   {
+      uint64_t b0;
+      uint64_t b1;
+      uint64_t b2;
+      uint64_t b3;
+
+      std::memcpy(&b0, &val[i], sizeof(uint64_t));
+      std::memcpy(&b1, &val[i + 1], sizeof(uint64_t));
+      std::memcpy(&b2, &val[i + 2], sizeof(uint64_t));
+      std::memcpy(&b3, &val[i + 3], sizeof(uint64_t));
+
+      // all four entries are +0: nothing to store and nothing to reset
+      if((b0 | b1 | b2 | b3) == 0)
+         continue;
+
+      for(int k = i; k < i + 4; ++k)
+      {
+         if(isNotZero(val[k], eps))
+            idx[num++] = k;
+         else
+            val[k] = +0.0;
+      }
+   }
+
+   for(; i < d; ++i)
+   {
+      if(isNotZero(val[i], eps))
+         idx[num++] = i;
+      else
+         val[i] = +0.0;
+   }
+
+   return num;
+}
+
 template < class R > class SVectorBase;
 template < class R > class SVSetBase;
 
@@ -147,15 +211,8 @@ public:
          const int d = dim();
 
          IdxSet::clear();
-         num = 0;
-
-         for(int i = 0; i < d; ++i)
-         {
-            if(isNotZero(VectorBase<R>::val[i], this->getEpsilon()))
-               idx[num++] = i;
-            else
-               VectorBase<R>::val[i] = +R(0);
-         }
+         assert(d <= IdxSet::max());
+         num = ssvectorSetupScan(VectorBase<R>::val.data(), idx, d, R(this->getEpsilon()));
 
          setupStatus = true;
 
