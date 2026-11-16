@@ -4984,14 +4984,55 @@ bool SoPlexBase<R>::getBasisInverseRowReal(int r, R* coef, int* inds, int* ninds
       // B^(-1) = \tilde{C}_B B'^(-1) R: scale rhs by \tilde{C} of position r, solution by R
       DSVectorBase<R> rhs(numCols());
       SSVectorBase<R>  y(numCols(), this->tolerances());
-      int* bind = nullptr;
 
-      // get ordering of column basis matrix
-      spx_alloc(bind, numRows());
-      getBasisInd(bind);
+      // get the r-th entry of the ordering of the column basis matrix (see getBasisInd()): the nonbasic rows in
+      // increasing order followed by the nonbasic columns; only this entry is needed, so the scan stops there
+      int bindr = 0;
+      bool found = false;
+      int k = 0;
+
+      for(int i = 0; i < numRows() && !found; ++i)
+      {
+         if(!_solver.isRowBasic(i))
+         {
+            if(k == r)
+            {
+               bindr = -1 - i;
+               found = true;
+            }
+
+            ++k;
+         }
+      }
+
+      for(int j = 0; j < numCols() && !found; ++j)
+      {
+         if(!_solver.isColBasic(j))
+         {
+            if(k == r)
+            {
+               bindr = j;
+               found = true;
+            }
+
+            ++k;
+         }
+      }
+
+      assert(found);
+
+#ifndef NDEBUG
+      {
+         int* bind = nullptr;
+         spx_alloc(bind, numRows());
+         getBasisInd(bind);
+         assert(bind[r] == bindr);
+         spx_free(bind);
+      }
+#endif
 
       // get vector corresponding to requested index r
-      int index = bind[r];
+      int index = bindr;
 
       // r corresponds to a basic row
       if(index < 0)
@@ -5053,7 +5094,7 @@ bool SoPlexBase<R>::getBasisInverseRowReal(int r, R* coef, int* inds, int* ninds
          {
             assert(_solver.number(id) >= 0);
             assert(_solver.number(id) < numRows());
-            assert(bind[r] >= 0 || _solver.number(id) != index);
+            assert(bindr >= 0 || _solver.number(id) != index);
 
             int rowindex = _solver.number(id);
 
@@ -5065,7 +5106,7 @@ bool SoPlexBase<R>::getBasisInverseRowReal(int r, R* coef, int* inds, int* ninds
       }
 
       // if r corresponds to a row vector, we have to add a 1 at position r
-      if(bind[r] < 0)
+      if(bindr < 0)
       {
          assert(coef[index] == 0.0);
          coef[index] = 1.0;
@@ -5074,9 +5115,6 @@ bool SoPlexBase<R>::getBasisInverseRowReal(int r, R* coef, int* inds, int* ninds
       // @todo implement returning of sparsity information like in column wise case
       if(ninds != nullptr)
          *ninds = -1;
-
-      // free memory
-      spx_free(bind);
    }
 
    return true;
