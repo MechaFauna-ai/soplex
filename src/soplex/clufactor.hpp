@@ -54,11 +54,21 @@ static const Real verySparseFactor4left  = 0.01;
 template <class Compare>
 static inline void initHeap(int* heap, int size, const int* permutation, Compare compare)
 {
+   // Keep an input that already satisfies heap order. Check while mapping;
+   // after the first violation, map the rest and build the heap bottom-up.
    for(int i = 0; i < size; ++i)
+   {
       heap[i] = permutation[heap[i]];
 
-   if(size > 1)
-      std::make_heap(heap, heap + size, compare);
+      if(i > 0 && compare(heap[(i - 1) / 2], heap[i]))
+      {
+         for(++i; i < size; ++i)
+            heap[i] = permutation[heap[i]];
+
+         std::make_heap(heap, heap + size, compare);
+         break;
+      }
+   }
 
 #ifdef SOPLEX_DEBUG
 
