@@ -4749,8 +4749,47 @@ void CLUFactor<R>::solveLleftNoNZ(R* vec)
 
 #else
 
-   for(i = thedim; i--;)
+   // A block of zero entries cannot propagate any updates.  If any entry is
+   // nonzero, reload and process the block in order: earlier updates may change
+   // later entries in the same block.
+   i = thedim;
+
+   while(i >= 4)
    {
+      if(vec[rorig[i - 1]] == 0 && vec[rorig[i - 2]] == 0
+            && vec[rorig[i - 3]] == 0 && vec[rorig[i - 4]] == 0)
+      {
+         i -= 4;
+         continue;
+      }
+
+      const int end = i - 4;
+
+      while(i > end)
+      {
+         --i;
+         r = rorig[i];
+         x = vec[r];
+
+         if(x != 0)
+         {
+            k = rbeg[r];
+            j = rbeg[r + 1] - k;
+            val = &rval[k];
+            idx = &ridx[k];
+
+            while(j-- > 0)
+            {
+               assert(l.rperm[*idx] < i);
+               vec[*idx++] -= x * *val++;
+            }
+         }
+      }
+   }
+
+   while(i > 0)
+   {
+      --i;
       r = rorig[i];
       x = vec[r];
 
