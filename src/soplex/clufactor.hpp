@@ -23,6 +23,8 @@
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #include <assert.h>
+#include <algorithm>
+#include <functional>
 #include "soplex/cring.h"
 
 namespace soplex
@@ -49,6 +51,34 @@ static const Real verySparseFactor4right = 0.2;
 static const Real verySparseFactor4left  = 0.01;
 
 /* generic heap management */
+template <class Compare>
+static inline void initHeap(int* heap, int size, const int* permutation, Compare compare)
+{
+   // Keep an input that already satisfies heap order. Check while mapping;
+   // after the first violation, map the rest and build the heap bottom-up.
+   for(int i = 0; i < size; ++i)
+   {
+      heap[i] = permutation[heap[i]];
+
+      if(i > 0 && compare(heap[(i - 1) / 2], heap[i]))
+      {
+         for(++i; i < size; ++i)
+            heap[i] = permutation[heap[i]];
+
+         std::make_heap(heap, heap + size, compare);
+         break;
+      }
+   }
+
+#ifdef SOPLEX_DEBUG
+
+   for(int i = 1; i < size; ++i)
+      for(int j = 0; j < i; ++j)
+         assert(heap[i] != heap[j]);
+
+#endif
+}
+
 static inline void enQueueMax(int* heap, int* size, int elem)
 {
    int i, j;
@@ -4309,8 +4339,7 @@ int CLUFactor<R>::solveUleft(R eps,
    /*  move rhsidx to a heap
     */
 
-   for(i = 0; i < rhsn;)
-      enQueueMin(rhsidx, &i, cperm[rhsidx[i]]);
+   initHeap(rhsidx, rhsn, cperm, std::greater<int>());
 
    ridx = u.row.idx;
 
@@ -4406,8 +4435,7 @@ void CLUFactor<R>::solveUleftNoNZ(R eps, R* vec,
    /*  move rhsidx to a heap
     */
 
-   for(i = 0; i < rhsn;)
-      enQueueMin(rhsidx, &i, cperm[rhsidx[i]]);
+   initHeap(rhsidx, rhsn, cperm, std::greater<int>());
 
    ridx = u.row.idx;
 
@@ -4671,8 +4699,7 @@ int CLUFactor<R>::solveLleft(R eps, R* vec, int* nonz, int rn)
    else
    {
       // move rhsidx to a heap
-      for(i = 0; i < rn;)
-         enQueueMax(nonz, &i, rperm[nonz[i]]);
+      initHeap(nonz, rn, rperm, std::less<int>());
 
       while(rn > 0)
       {
