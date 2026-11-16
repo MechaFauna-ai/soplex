@@ -330,8 +330,6 @@ void SPxScaler<R>::getColUnscaled(const SPxLPBase<R>& lp, int i, DSVectorBase<R>
    const DataArray < int >& colscaleExp = lp.LPColSetBase<R>::scaleExp;
    const DataArray < int >& rowscaleExp = lp.LPRowSetBase<R>::scaleExp;
 
-   vec = lp.LPColSetBase<R>::colVector(i);
-
    int exp1;
    int exp2 = colscaleExp[i];
 
