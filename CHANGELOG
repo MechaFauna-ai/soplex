@@ -4,6 +4,7 @@ Release 9.0.0
 features:
 
 performance:
+- SSVectorBase<double>::setup() skips blocks of four entries that are already +0 when it collects the nonzeros of a dense vector, instead of testing and resetting every entry; same result
 
 fixed bugs:
 
