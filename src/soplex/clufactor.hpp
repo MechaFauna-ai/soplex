@@ -941,9 +941,6 @@ void CLUFactor<R>::forestUpdate(int p_col, R* p_work, int num, int* nonz)
 
       rorig[r] = j;
 
-      for(i = c; i <= r; ++i)
-         rperm[rorig[i]] = i;
-
       j = corig[c];
 
       // memmove is more efficient than a for loop
@@ -953,8 +950,12 @@ void CLUFactor<R>::forestUpdate(int p_col, R* p_work, int num, int* nonz)
 
       corig[r] = j;
 
+      // Update both inverse permutations in one traversal.
       for(i = c; i <= r; ++i)
+      {
+         rperm[rorig[i]] = i;
          cperm[corig[i]] = i;
+      }
 
 
       rowno = rorig[r];
