@@ -4386,6 +4386,23 @@ void CLUFactor<R>::solveUleftNoNZ(R eps, R* vec,
    corig = col.orig;
    cperm = col.perm;
 
+   // Every RHS entry other than positive zero must be listed, including
+   // negative zero and values below eps. The heap uses these entries as pending
+   // markers; the dense scan relies on unlisted entries being positive zero.
+#ifndef NDEBUG
+   std::vector<bool> listed(thedim, false);
+
+   for(i = 0; i < rhsn; ++i)
+   {
+      assert(rhsidx[i] >= 0 && rhsidx[i] < thedim);
+      listed[rhsidx[i]] = true;
+   }
+
+   for(i = 0; i < thedim; ++i)
+      assert(listed[i] || isPlusZero(rhs[i]));
+
+#endif
+
    /*  move rhsidx to a heap
     */
 
@@ -4446,26 +4463,30 @@ void CLUFactor<R>::solveUleftNoNZ(R eps, R* vec,
 
       // The heap visits permuted columns in increasing order. Once the pending
       // right-hand side is dense, scan the remaining columns in that same order.
-      if(rhsn > (thedim - i) * verySparseFactor4right)
+      if(rhsn > (thedim - i - 1) * verySparseFactor4right)
       {
          for(i = rhsidx[0]; i < thedim; ++i)
          {
             c = corig[i];
+            assert(c >= 0 && c < thedim);
             x = rhs[c];
             rhs[c] = 0;
 
             if(isNotZero(x, eps))
             {
                r = rorig[i];
+               assert(r >= 0 && r < thedim);
                x *= diag[r];
                vec[r] = x;
                k = rbeg[r];
+               assert(k >= 0 && k < u.row.size);
                idx = &ridx[k];
                val = &rval[k];
 
                for(int m = rlen[r]; m; --m)
                {
                   j = *idx++;
+                  assert(j >= 0 && j < thedim);
                   assert(cperm[j] > i);
                   y = rhs[j];
 
