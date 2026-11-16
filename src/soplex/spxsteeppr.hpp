@@ -233,10 +233,7 @@ namespace steeppr
 template <class R>
 R computePrice(R viol, R weight, R tol)
 {
-   if(weight < tol)
-      return viol * viol / tol;
-   else
-      return viol * viol / weight;
+   return viol * viol / (weight < tol ? tol : weight);
 }
 }
 
