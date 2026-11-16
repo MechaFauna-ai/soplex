@@ -1683,8 +1683,23 @@ void CLUFactor<R>::colSingletons()
 
          n = u.col.start[p_col] + u.col.len[p_col] - temp.s_cact[p_col];
 
-         for(k = n; u.col.idx[k] != p_row; ++k)
-            ;
+         // The pivot row is present. Check each entry before advancing so
+         // the unrolled scan needs no separate end test.
+         k = n;
+
+         while(u.col.idx[k] != p_row)
+         {
+            if(u.col.idx[++k] == p_row)
+               break;
+
+            if(u.col.idx[++k] == p_row)
+               break;
+
+            if(u.col.idx[++k] == p_row)
+               break;
+
+            ++k;
+         }
 
          assert(k < u.col.start[p_col] + u.col.len[p_col]);
 
