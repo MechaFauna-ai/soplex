@@ -92,35 +92,21 @@ static inline int deQueueMax(int* heap, int* size)
 
    for(j = 0, i = 1; i < s; i = 2 * j + 1)
    {
+      // Select the larger child without a branch, preferring the right child
+      // on ties as before.
       e1 = heap[i];
       e2 = heap[i + 1];
+      i += (e1 <= e2);
+      e1 = e1 > e2 ? e1 : e2;
 
-      if(e1 > e2)
+      if(e >= e1)
       {
-         if(e < e1)
-         {
-            heap[j] = e1;
-            j = i;
-         }
-         else
-         {
-            heap[j] = e;
-            return elem;
-         }
+         heap[j] = e;
+         return elem;
       }
-      else
-      {
-         if(e < e2)
-         {
-            heap[j] = e2;
-            j = i + 1;
-         }
-         else
-         {
-            heap[j] = e;
-            return elem;
-         }
-      }
+
+      heap[j] = e1;
+      j = i;
    }
 
    if(i < *size && e < heap[i])
@@ -177,35 +163,21 @@ static inline int deQueueMin(int* heap, int* size)
 
    for(j = 0, i = 1; i < s; i = 2 * j + 1)
    {
+      // Select the smaller child without a branch, preferring the right child
+      // on ties as before.
       e1 = heap[i];
       e2 = heap[i + 1];
+      i += (e1 >= e2);
+      e1 = e1 < e2 ? e1 : e2;
 
-      if(e1 < e2)
+      if(e <= e1)
       {
-         if(e > e1)
-         {
-            heap[j] = e1;
-            j = i;
-         }
-         else
-         {
-            heap[j] = e;
-            return elem;
-         }
+         heap[j] = e;
+         return elem;
       }
-      else
-      {
-         if(e > e2)
-         {
-            heap[j] = e2;
-            j = i + 1;
-         }
-         else
-         {
-            heap[j] = e;
-            return elem;
-         }
-      }
+
+      heap[j] = e1;
+      j = i;
    }
 
    if(i < *size && e > heap[i])
