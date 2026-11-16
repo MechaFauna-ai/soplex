@@ -497,11 +497,9 @@ void CLUFactor<R>::remaxRow(int p_row, int len)
       idx = u.row.idx;
       val = u.row.val.data();
 
-      for(; i < k; ++i, ++j)
-      {
-         val[j] = val[i];
-         idx[j] = idx[i];
-      }
+      // The destination is past the used row file, so both ranges are disjoint.
+      std::copy(val + i, val + k, val + j);
+      std::copy(idx + i, idx + k, idx + j);
    }
 
    assert(u.row.start[u.row.list.prev->idx] + u.row.max[u.row.list.prev->idx]
