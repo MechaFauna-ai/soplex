@@ -39,6 +39,9 @@
 #ifndef _SPXDEFINES_H_
 #define _SPXDEFINES_H_
 #include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 
 #ifdef _MSC_VER
 #include <float.h>
@@ -319,6 +322,22 @@ inline bool isPlusZero(R x)
 {
    using std::signbit;
    return x == 0 && !signbit(x);
+}
+
+// Binary64 positive zero has an all-zero representation. LU sparse solves use
+// this test for every update to distinguish an unlisted entry from minus zero.
+template <>
+inline bool isPlusZero<double>(double x)
+{
+   if(std::numeric_limits<double>::is_iec559 && sizeof(double) == sizeof(std::uint64_t)
+         && std::numeric_limits<double>::digits == 53)
+   {
+      std::uint64_t bits;
+      std::memcpy(&bits, &x, sizeof(bits));
+      return bits == 0;
+   }
+
+   return x == 0 && !std::signbit(x);
 }
 
 static const Real infinity = SOPLEX_DEFAULT_INFINITY;
