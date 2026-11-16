@@ -4443,6 +4443,52 @@ void CLUFactor<R>::solveUleftNoNZ(R eps, R* vec,
             }
          }
       }
+
+      // The heap visits permuted columns in increasing order. Once the pending
+      // right-hand side is dense, scan the remaining columns in that same order.
+      if(rhsn > (thedim - i) * verySparseFactor4right)
+      {
+         for(i = rhsidx[0]; i < thedim; ++i)
+         {
+            c = corig[i];
+            x = rhs[c];
+            rhs[c] = 0;
+
+            if(isNotZero(x, eps))
+            {
+               r = rorig[i];
+               x *= diag[r];
+               vec[r] = x;
+               k = rbeg[r];
+               idx = &ridx[k];
+               val = &rval[k];
+
+               for(int m = rlen[r]; m; --m)
+               {
+                  j = *idx++;
+                  assert(cperm[j] > i);
+                  y = rhs[j];
+
+                  // Preserve the sparse solve's suppression and signed-zero
+                  // marker: omitting these changes subsequent arithmetic.
+                  if(isPlusZero(y))
+                  {
+                     y = -x * (*val++);
+
+                     if(isNotZero(y, eps))
+                        rhs[j] = y;
+                  }
+                  else
+                  {
+                     y -= x * (*val++);
+                     rhs[j] = (y != 0) ? y : -R(0);
+                  }
+               }
+            }
+         }
+
+         return;
+      }
    }
 }
 
