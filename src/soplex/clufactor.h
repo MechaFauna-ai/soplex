@@ -334,6 +334,8 @@ private:
    void setPivot(const int p_stage, const int p_col, const int p_row, const R val);
    ///
    void colSingletons();
+   template <bool indexed>
+   void colSingletonsImpl(int firstrow);
    ///
    void rowSingletons();
 
