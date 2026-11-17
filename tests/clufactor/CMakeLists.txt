@@ -10,3 +10,11 @@ if(SANITIZE)
 endif()
 
 add_test(NAME clufactor-bitmaxqueue COMMAND soplex_clufactor_queue_testing)
+
+add_executable(soplex_clufactor_maxheap_testing maxheap.cpp)
+target_link_libraries(soplex_clufactor_maxheap_testing libsoplex)
+set_property(TARGET soplex_clufactor_maxheap_testing PROPERTY INTERPROCEDURAL_OPTIMIZATION ${LTO_AVAILABLE})
+if(SANITIZE)
+    add_sanitizers(soplex_clufactor_maxheap_testing)
+endif()
+add_test(NAME clufactor-maxheap COMMAND soplex_clufactor_maxheap_testing)
