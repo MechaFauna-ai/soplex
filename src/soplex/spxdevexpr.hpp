@@ -953,6 +953,8 @@ SPxId SPxDevexPR<R>::selectEnterDenseDim(R& best, R feastol, int start, int incr
    int end = this->thesolver->coWeights.dim();
    int enterIdx = -1;
 
+   assert(end == this->thesolver->coTest().dim());
+
    if(devexpr::densePriceCandidates(cTest, cpen, start, end, incr, feastol, best, enterIdx))
    {
       if(enterIdx >= 0)
@@ -962,9 +964,9 @@ SPxId SPxDevexPR<R>::selectEnterDenseDim(R& best, R feastol, int start, int incr
       }
       return SPxId();
    }
+
    R x;
 
-   assert(end == this->thesolver->coTest().dim());
 
    for(; start < end; start += incr)
    {
@@ -997,6 +999,8 @@ SPxId SPxDevexPR<R>::selectEnterDenseCoDim(R& best, R feastol, int start, int in
    int end = this->thesolver->weights.dim();
    int enterIdx = -1;
 
+   assert(end == this->thesolver->test().dim());
+
    if(devexpr::densePriceCandidates(test, pen, start, end, incr, feastol, best, enterIdx))
    {
       if(enterIdx >= 0)
@@ -1006,9 +1010,9 @@ SPxId SPxDevexPR<R>::selectEnterDenseCoDim(R& best, R feastol, int start, int in
       }
       return SPxId();
    }
+
    R x;
 
-   assert(end == this->thesolver->test().dim());
 
    for(; start < end; start += incr)
    {
