@@ -22,7 +22,8 @@ int main()
    try
    {
       std::vector<double> test(35, 1), weight(35, 2);
-#if defined(__SSE2__) && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
+#if defined(__SSE2__) && !defined(WITH_FLOAT) && !defined(WITH_LONG_DOUBLE) \
+   && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
       auto select = [&](double initial, double tolerance, int expectedIndex, double expected)
       {
          int index = -1;

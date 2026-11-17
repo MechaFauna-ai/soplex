@@ -24,7 +24,8 @@
 
 #include <math.h>
 
-#if defined(__SSE2__) && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
+#if defined(__SSE2__) && !defined(WITH_FLOAT) && !defined(WITH_LONG_DOUBLE) \
+   && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
 #include <emmintrin.h>
 #endif
 
@@ -136,7 +137,8 @@ inline bool densePriceCandidates(const R*, const R*, int, int, int, const R&, R&
    return false;
 }
 
-#if defined(__SSE2__) && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
+#if defined(__SSE2__) && !defined(WITH_FLOAT) && !defined(WITH_LONG_DOUBLE) \
+   && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
 // Screen eight consecutive rows together. Evaluate prices only for eligible
 // rows, in their original order, so strict comparisons keep the first winner.
 inline bool densePriceCandidates(const Real* test, const Real* weight, int start, int end,
