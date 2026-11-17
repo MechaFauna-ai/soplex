@@ -30,7 +30,8 @@
 #include <iostream>
 #include <type_traits>
 
-#if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM)
+#if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM) \
+   && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
 #include <emmintrin.h>
 #endif
 
@@ -244,7 +245,8 @@ inline bool pairedWeightDots(const SVectorBase<R>&, const SVectorBase<R>&,
    return false;
 }
 
-#if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM)
+#if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM) \
+   && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
 #if defined(__GNUC__) || defined(__clang__)
 inline __attribute__((always_inline))
 #else
@@ -581,6 +583,8 @@ void SPxSteepPR<R>::entered4(SPxId /* id */, int n)
             coWeights_ptr[i] = 1 / this->thesolver->epsilon();
       }
 
+#if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM) \
+   && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
       auto updateWeight = [&](int idx, R dot)
       {
          const R multiplier = xi_p * pVec[idx];
@@ -608,6 +612,24 @@ void SPxSteepPR<R>::entered4(SPxId /* id */, int n)
          else
             updateWeight(i, column * workVec);
       }
+#else
+      for(j = pIdx.size() - 1; j >= 0; --j)
+      {
+         i = pIdx.index(j);
+         xi_ip = xi_p * pVec[i];
+         weights_ptr[i] += xi_ip * (xi_ip * pi_p - 2.0 * (this->thesolver->vector(i) * workVec));
+
+         /*
+           if(weights_ptr[i] < 1)
+           weights_ptr[i] = 1 / (2-x);
+         */
+         if(weights_ptr[i] < delta)
+            weights_ptr[i] = delta;
+         // weights_ptr[i] = 1;
+         else if(weights_ptr[i] > R(infinity))
+            weights_ptr[i] = 1.0 / this->thesolver->epsilon();
+      }
+#endif
    }
 
    /*@
