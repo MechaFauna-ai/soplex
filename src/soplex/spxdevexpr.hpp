@@ -156,11 +156,14 @@ inline bool densePriceCandidates(const Real* test, const Real* weight, int start
          | (unsigned(_mm_movemask_pd(_mm_cmplt_pd(_mm_loadu_pd(test + start + 6), threshold))) << 6);
       while(eligible != 0)
       {
-         // Find the first set bit without a compiler-specific bit-scan builtin.
-         unsigned int first = eligible & -eligible;
+#if defined(__GNUC__) || defined(__clang__)
+         const int offset = __builtin_ctz(eligible);
+#else
+         const unsigned int first = eligible & -eligible;
          int offset = (first & 0xf0) != 0 ? 4 : 0;
          offset += (first & 0xcc) != 0 ? 2 : 0;
          offset += (first & 0xaa) != 0 ? 1 : 0;
+#endif
          const int index = start + offset;
          const Real value = test[index];
          const Real price = value * value
