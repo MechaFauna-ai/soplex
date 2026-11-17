@@ -28,6 +28,7 @@
 #include <assert.h>
 #include <math.h>
 #include <iostream>
+#include <type_traits>
 
 #if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM)
 #include <emmintrin.h>
@@ -595,8 +596,11 @@ void SPxSteepPR<R>::entered4(SPxId /* id */, int n)
          i = pIdx.index(j);
          const SVectorBase<R>& column = this->thesolver->vector(i);
          R firstDot, secondDot;
-         if(j > 0 && steeppr::pairedWeightDots(column,
-               this->thesolver->vector(pIdx.index(j - 1)), workVec, firstDot, secondDot))
+         // Long columns keep scalar traversal: pairing them can reduce
+         // instructions while making the compensated sum slower in cycles.
+         if(std::is_same<R, Real>::value && j > 0 && column.size() <= 64
+               && steeppr::pairedWeightDots(column,
+                     this->thesolver->vector(pIdx.index(j - 1)), workVec, firstDot, secondDot))
          {
             updateWeight(i, firstDot);
             updateWeight(pIdx.index(--j), secondDot);
