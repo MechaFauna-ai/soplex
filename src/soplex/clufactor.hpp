@@ -50,6 +50,34 @@ static const Real verySparseFactor = 0.001;
 static const Real verySparseFactor4right = 0.2;
 static const Real verySparseFactor4left  = 0.01;
 
+// Preserve a cancelled entry in the sparse structure by representing zero as
+// minus zero. With gradual underflow, all nonzero values, including NaN
+// payloads, pass through unchanged. Like isPlusZero<double>, the bit test does
+// not reproduce DAZ comparisons or signaling-NaN exception flags.
+template <class R>
+inline R nonzeroOrMinusZero(R value)
+{
+   return value != 0 ? value : -R(0);
+}
+
+template <>
+inline double nonzeroOrMinusZero<double>(double value)
+{
+   if(std::numeric_limits<double>::is_iec559 && sizeof(double) == sizeof(std::uint64_t)
+         && std::numeric_limits<double>::digits == 53)
+   {
+      std::uint64_t bits;
+      std::memcpy(&bits, &value, sizeof(bits));
+
+      if((bits << 1) == 0)
+         return -double(0);
+
+      return value;
+   }
+
+   return value != 0 ? value : -double(0);
+}
+
 /* generic heap management */
 template <class Compare>
 static inline void initHeap(int* heap, int size, const int* permutation, Compare compare)
@@ -1062,7 +1090,7 @@ void CLUFactor<R>::forestUpdate(int p_col, R* p_work, int num, int* nonz)
 
                y -= x * rval[j];
 
-               p_work[jj] = (y != 0) ? y : -R(0);
+               p_work[jj] = nonzeroOrMinusZero(y);
             }
          }
 
@@ -4237,7 +4265,7 @@ int CLUFactor<R>::solveUpdateLeft(R eps, R* vec, int* nonz, int n)
       else
       {
          y = -R(tmp);
-         vec[k] = (y != 0) ? y : -R(0);
+         vec[k] = nonzeroOrMinusZero(y);
       }
    }
 
@@ -4392,7 +4420,7 @@ int CLUFactor<R>::solveUleft(R eps,
             else
             {
                y -= x * (*val++);
-               rhs[j] = (y != 0) ? y : -R(0);
+               rhs[j] = nonzeroOrMinusZero(y);
             }
          }
       }
@@ -4485,7 +4513,7 @@ void CLUFactor<R>::solveUleftNoNZ(R eps, R* vec,
             else
             {
                y -= x * (*val++);
-               rhs[j] = (y != 0) ? y : -R(0);
+               rhs[j] = nonzeroOrMinusZero(y);
             }
          }
       }
@@ -4531,7 +4559,7 @@ void CLUFactor<R>::solveUleftNoNZ(R eps, R* vec,
                   else
                   {
                      y -= x * (*val++);
-                     rhs[j] = (y != 0) ? y : -R(0);
+                     rhs[j] = nonzeroOrMinusZero(y);
                   }
                }
             }
@@ -4587,7 +4615,7 @@ int CLUFactor<R>::solveLleftForest(R eps, R* vec, int* nonz, int n)
             else
             {
                y -= x * (*val++);
-               vec[m] = (y != 0) ? y : -R(0);
+               vec[m] = nonzeroOrMinusZero(y);
             }
          }
       }
@@ -4736,7 +4764,7 @@ int CLUFactor<R>::solveLleft(R eps, R* vec, int* nonz, int rn)
                else
                {
                   y -= x * *val++;
-                  vec[m] = (y != 0) ? y : -R(0);
+                  vec[m] = nonzeroOrMinusZero(y);
                }
             }
          }
@@ -5341,7 +5369,7 @@ int CLUFactor<R>::vSolveUright(R* vec, int* vidx,
             else
             {
                y -= x * (*val++);
-               rhs[k] = (y != 0) ? y : -R(0);
+               rhs[k] = nonzeroOrMinusZero(y);
             }
          }
 
@@ -5477,7 +5505,7 @@ void CLUFactor<R>::vSolveUrightNoNZ(R* vec,
             else
             {
                y -= x * (*val++);
-               rhs[k] = (y != 0) ? y : -R(0);
+               rhs[k] = nonzeroOrMinusZero(y);
             }
          }
       }
@@ -5589,7 +5617,7 @@ int CLUFactor<R>::vSolveUright2(
                else
                {
                   y -= x * (*val++);
-                  rhs[k] = (y != 0) ? y : -R(0);
+                  rhs[k] = nonzeroOrMinusZero(y);
                }
             }
          }
@@ -5614,7 +5642,7 @@ int CLUFactor<R>::vSolveUright2(
                else
                {
                   y -= x * (*val++);
-                  rhs[k] = (y != 0) ? y : -R(0);
+                  rhs[k] = nonzeroOrMinusZero(y);
                }
             }
          }
@@ -5765,7 +5793,7 @@ int CLUFactor<R>::vSolveUpdateRight(R* vec, int* ridx, int n, R eps)
                ridx[n++] = m;
 
             y = y - x * (*val++);
-            vec[m] = (y != 0) ? y : -R(0);
+            vec[m] = nonzeroOrMinusZero(y);
          }
       }
    }
