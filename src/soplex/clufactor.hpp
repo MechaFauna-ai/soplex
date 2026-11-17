@@ -27,6 +27,7 @@
 #include <functional>
 #include <cstdint>
 #include <new>
+#include <type_traits>
 #include "soplex/cring.h"
 
 namespace soplex
@@ -151,6 +152,108 @@ static inline int deQueueMax(int* heap, int* size)
 
    return elem;
 }
+
+// The U-right solve only observes the maximum and count of its scratch heap.
+// Both queues therefore visit rows in exactly the same descending order.
+class CLUFactorHeapMaxQueue
+{
+   int* heap;
+public:
+   CLUFactorHeapMaxQueue(int* indices, int) : heap(indices) {}
+   int pop(int* count) { return deQueueMax(heap, count); }
+   void push(int elem, int* count) { enQueueMax(heap, count, elem); }
+   int maximum() const { return *heap; }
+};
+
+// Bounded integer queue, with a bit for each pending row permutation index.
+// Only the top summary is initialized. A zero summary bit makes the child
+// storage inactive: its first insertion overwrites it without reading it.
+class CLUFactorBitMaxQueue
+{
+   std::uint64_t words[1024];
+   std::uint64_t summaries[16];
+   std::uint64_t top;
+   int maxword;
+
+   static int highestBit(std::uint64_t value)
+   {
+      assert(value != 0);
+#if defined(__GNUC__) || defined(__clang__)
+      return 63 - __builtin_clzll(value);
+#else
+      int bit = 0;
+      while(value >>= 1)
+         ++bit;
+      return bit;
+#endif
+   }
+
+public:
+   CLUFactorBitMaxQueue(int* indices, int count) : top(0), maxword(0)
+   {
+      int size = 0;
+      for(int i = 0; i < count; ++i)
+         push(indices[i], &size);
+   }
+
+   void push(int elem, int* count)
+   {
+      assert(elem >= 0 && elem < 65536);
+      const int word = elem / 64;
+      const int group = word / 64;
+      const std::uint64_t bit = std::uint64_t(1) << (elem % 64);
+      const std::uint64_t wordbit = std::uint64_t(1) << (word % 64);
+      const std::uint64_t groupbit = std::uint64_t(1) << group;
+      if((top & groupbit) == 0)
+      {
+         top |= groupbit;
+         summaries[group] = wordbit;
+         words[word] = bit;
+      }
+      else if((summaries[group] & wordbit) == 0)
+      {
+         summaries[group] |= wordbit;
+         words[word] = bit;
+      }
+      else
+      {
+         assert((words[word] & bit) == 0);
+         words[word] |= bit;
+      }
+      if(word > maxword)
+         maxword = word;
+      ++*count;
+   }
+
+   int maximum() const
+   {
+      assert(top != 0);
+      return maxword * 64 + highestBit(words[maxword]);
+   }
+
+   int pop(int* count)
+   {
+      const int elem = maximum();
+      const std::uint64_t remaining = words[maxword] & ~(std::uint64_t(1) << (elem % 64));
+      words[maxword] = remaining;
+      --*count;
+      if(remaining == 0)
+      {
+         const int group = maxword / 64;
+         summaries[group] &= ~(std::uint64_t(1) << (maxword % 64));
+         if(summaries[group] == 0)
+            top &= ~(std::uint64_t(1) << group);
+         if(top != 0)
+         {
+            const int nextgroup = highestBit(top);
+            maxword = nextgroup * 64 + highestBit(summaries[nextgroup]);
+         }
+         else
+            maxword = 0;
+      }
+      return elem;
+   }
+};
 
 static inline void enQueueMin(int* heap, int* size, int elem)
 {
@@ -5388,6 +5491,13 @@ template <class R>
 int CLUFactor<R>::vSolveUright(R* vec, int* vidx,
                                R* rhs, int* ridx, int rn, R eps)
 {
+   // A bit queue pays off for hypersparse factors, where finding the next row
+   // is a substantial part of the solve. Retain the original heap loop for
+   // denser factors, and for dimensions in which conversion cannot occur.
+   if(thedim > 1280 && thedim <= 65536
+         && std::int64_t(nzCnt) * 512 < std::int64_t(thedim) * thedim)
+      return vSolveUrightImpl<false>(vec, vidx, rhs, ridx, rn, eps);
+
    int i, j, k, r, c, n;
    int* rorig, *corig;
    int* rperm;
@@ -5459,6 +5569,123 @@ int CLUFactor<R>::vSolveUright(R* vec, int* vidx,
          {
             /* continue with dense case */
             for(i = *ridx; i >= 0; --i)
+            {
+               r = rorig[i];
+               assert(r >= 0 && r < thedim);
+               x = diag[r] * rhs[r];
+               rhs[r] = 0;
+
+               if(isNotZero(x, eps))
+               {
+                  c = corig[i];
+                  assert(c >= 0 && c < thedim);
+                  vidx[n++] = c;
+                  vec[c] = x;
+                  val = &cval[cbeg[c]];
+                  idx = &cidx[cbeg[c]];
+                  j = clen[c];
+
+                  while(j-- > 0)
+                  {
+                     assert(*idx >= 0 && *idx < thedim);
+                     rhs[*idx++] -= x * (*val++);
+                  }
+               }
+            }
+
+            break;
+         }
+      }
+   }
+
+   return n;
+}
+
+template <class R>
+template <bool UseBitQueue>
+int CLUFactor<R>::vSolveUrightImpl(R* vec, int* vidx,
+                               R* rhs, int* ridx, int rn, R eps)
+{
+   int i, j, k, r, c, n;
+   int* rorig, *corig;
+   int* rperm;
+   int* cidx, *clen, *cbeg;
+   R* cval;
+   R x, y;
+
+   int* idx;
+   R* val;
+
+   rorig = row.orig;
+   corig = col.orig;
+   rperm = row.perm;
+
+   cidx = u.col.idx;
+   cval = u.col.val.data();
+   clen = u.col.len;
+   cbeg = u.col.start;
+
+   typename std::conditional<UseBitQueue, CLUFactorBitMaxQueue, CLUFactorHeapMaxQueue>::type queue(ridx, rn);
+
+   n = 0;
+
+   while(rn > 0)
+   {
+      // Switch only once a substantial, still sparse queue has developed.
+      // The heap contents form the same pending set; no numeric work occurs
+      // during conversion, and both representations pop the same maximum.
+      if(!UseBitQueue && rn >= 128 && thedim <= 65536
+            && rn < *ridx * 0.1)
+         return n + vSolveUrightImpl<true>(vec, vidx + n, rhs, ridx, rn, eps);
+
+      /*      Find nonzero with highest permuted row index and setup i and r
+       */
+      i = queue.pop(&rn);
+      assert(i >= 0 && i < thedim);
+      r = rorig[i];
+      assert(r >= 0 && r < thedim);
+
+      x = diag[r] * rhs[r];
+      rhs[r] = 0;
+
+      if(isNotZero(x, eps))
+      {
+         c = corig[i];
+         assert(c >= 0 && c < thedim);
+         vidx[n++] = c;
+         vec[c] = x;
+         val = &cval[cbeg[c]];
+         idx = &cidx[cbeg[c]];
+         j = clen[c];
+
+         while(j-- > 0)
+         {
+            assert(*idx >= 0 && *idx < thedim);
+            k = *idx++;
+            assert(k >= 0 && k < thedim);
+            y = rhs[k];
+
+            if(isPlusZero(y))
+            {
+               y = -x * (*val++);
+
+               if(isNotZero(y, eps))
+               {
+                  rhs[k] = y;
+                  queue.push(rperm[k], &rn);
+               }
+            }
+            else
+            {
+               y -= x * (*val++);
+               rhs[k] = (y != 0) ? y : -R(0);
+            }
+         }
+
+         if(rn > i * verySparseFactor4right)
+         {
+            /* continue with dense case */
+            for(i = queue.maximum(); i >= 0; --i)
             {
                r = rorig[i];
                assert(r >= 0 && r < thedim);

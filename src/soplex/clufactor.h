@@ -293,6 +293,8 @@ private:
                       R* vec3, int* ridx3, int& rn3, R eps3);
    ///
    int vSolveUright(R* vec, int* vidx, R* rhs, int* ridx, int rn, R eps);
+   template <bool UseBitQueue>
+   int vSolveUrightImpl(R* vec, int* vidx, R* rhs, int* ridx, int rn, R eps);
    ///
    void vSolveUrightNoNZ(R* vec, R* rhs, int* ridx, int rn, R eps);
    ///
