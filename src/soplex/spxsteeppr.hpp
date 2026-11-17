@@ -31,6 +31,7 @@
 #include <type_traits>
 
 #if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM) \
+   && !defined(WITH_FLOAT) && !defined(WITH_LONG_DOUBLE) \
    && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
 #include <emmintrin.h>
 #endif
@@ -246,6 +247,7 @@ inline bool pairedWeightDots(const SVectorBase<R>&, const SVectorBase<R>&,
 }
 
 #if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM) \
+   && !defined(WITH_FLOAT) && !defined(WITH_LONG_DOUBLE) \
    && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
 #if defined(__GNUC__) || defined(__clang__)
 inline __attribute__((always_inline))
@@ -584,6 +586,7 @@ void SPxSteepPR<R>::entered4(SPxId /* id */, int n)
       }
 
 #if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM) \
+   && !defined(WITH_FLOAT) && !defined(WITH_LONG_DOUBLE) \
    && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
       auto updateWeight = [&](int idx, R dot)
       {

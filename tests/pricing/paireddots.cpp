@@ -82,6 +82,7 @@ int main()
          const bool handled = soplex::steeppr::pairedWeightDots(first, second, work,
                               firstDot, secondDot);
 #if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM) \
+   && !defined(WITH_FLOAT) && !defined(WITH_LONG_DOUBLE) \
    && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
          check(handled);
 #else
