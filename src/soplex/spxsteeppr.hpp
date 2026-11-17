@@ -29,6 +29,10 @@
 #include <math.h>
 #include <iostream>
 
+#if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM)
+#include <emmintrin.h>
+#endif
+
 #include "soplex/spxdefines.h"
 #include "soplex/spxsteeppr.h"
 #include "soplex/random.h"
@@ -230,6 +234,49 @@ void SPxSteepPR<R>::left4(int n, SPxId id)
 
 namespace steeppr
 {
+// Pair independent pricing dots of equal length. Each SIMD lane follows the
+// scalar StableSum operation sequence and sparse element order.
+template <class R>
+inline bool pairedWeightDots(const SVectorBase<R>&, const SVectorBase<R>&,
+                             const VectorBase<R>&, R&, R&)
+{
+   return false;
+}
+
+#if defined(__SSE2__) && !defined(SOPLEX_CHECK_STABLESUM)
+#if defined(__GNUC__) || defined(__clang__)
+inline __attribute__((always_inline))
+#else
+inline
+#endif
+bool pairedWeightDots(const SVectorBase<Real>& first, const SVectorBase<Real>& second,
+                      const VectorBase<Real>& work, Real& firstDot, Real& secondDot)
+{
+   const int count = first.size();
+   if(count != second.size())
+      return false;
+
+   __m128d sum = _mm_setzero_pd();
+   __m128d correction = _mm_setzero_pd();
+   for(int k = 0; k < count; ++k)
+   {
+      const __m128d coefficient = _mm_set_pd(second.value(k), first.value(k));
+      const __m128d value = _mm_set_pd(work[second.index(k)], work[first.index(k)]);
+      const __m128d input = _mm_mul_pd(coefficient, value);
+      const __m128d total = _mm_add_pd(sum, input);
+      const __m128d increment = _mm_sub_pd(total, sum);
+      const __m128d error = _mm_add_pd(_mm_sub_pd(sum, _mm_sub_pd(total, increment)),
+                                     _mm_sub_pd(input, increment));
+      correction = _mm_add_pd(correction, error);
+      sum = total;
+   }
+   const __m128d result = _mm_add_pd(sum, correction);
+   _mm_store_sd(&firstDot, result);
+   _mm_storeh_pd(&secondDot, result);
+   return true;
+}
+#endif
+
 template <class R>
 R computePrice(R viol, R weight, R tol)
 {
@@ -526,21 +573,29 @@ void SPxSteepPR<R>::entered4(SPxId /* id */, int n)
             coWeights_ptr[i] = 1 / this->thesolver->epsilon();
       }
 
+      auto updateWeight = [&](int idx, R dot)
+      {
+         const R multiplier = xi_p * pVec[idx];
+         weights_ptr[idx] += multiplier * (multiplier * pi_p - 2.0 * dot);
+         if(weights_ptr[idx] < delta)
+            weights_ptr[idx] = delta;
+         else if(weights_ptr[idx] > R(infinity))
+            weights_ptr[idx] = 1.0 / this->thesolver->epsilon();
+      };
+
       for(j = pIdx.size() - 1; j >= 0; --j)
       {
          i = pIdx.index(j);
-         xi_ip = xi_p * pVec[i];
-         weights_ptr[i] += xi_ip * (xi_ip * pi_p - 2.0 * (this->thesolver->vector(i) * workVec));
-
-         /*
-           if(weights_ptr[i] < 1)
-           weights_ptr[i] = 1 / (2-x);
-         */
-         if(weights_ptr[i] < delta)
-            weights_ptr[i] = delta;
-         // weights_ptr[i] = 1;
-         else if(weights_ptr[i] > R(infinity))
-            weights_ptr[i] = 1.0 / this->thesolver->epsilon();
+         const SVectorBase<R>& column = this->thesolver->vector(i);
+         R firstDot, secondDot;
+         if(j > 0 && steeppr::pairedWeightDots(column,
+               this->thesolver->vector(pIdx.index(j - 1)), workVec, firstDot, secondDot))
+         {
+            updateWeight(i, firstDot);
+            updateWeight(pIdx.index(--j), secondDot);
+         }
+         else
+            updateWeight(i, column * workVec);
       }
    }
 
