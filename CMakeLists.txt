@@ -537,6 +537,7 @@ add_subdirectory(src)
 add_subdirectory(tests/c_interface)
 add_subdirectory(check)
 enable_testing()
+add_subdirectory(tests/clufactor)
 
 # Store PIC flag.
 get_target_property(libsoplex_pic libsoplex POSITION_INDEPENDENT_CODE)
