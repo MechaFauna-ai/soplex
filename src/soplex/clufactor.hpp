@@ -25,6 +25,8 @@
 #include <assert.h>
 #include <algorithm>
 #include <functional>
+#include <cstdint>
+#include <new>
 #include "soplex/cring.h"
 
 namespace soplex
@@ -1674,18 +1676,37 @@ void CLUFactor<R>::colSingletonsImpl(int firstrow)
    // Short searches do not justify an index. Only account work after the
    // first four comparisons, keeping the common cases free of accounting.
    const auto findRow = [&scanned](const int* entries, int start, int target) {
-      int pos = start;
-      if(entries[pos] == target) return pos;
-      if(entries[++pos] == target) return pos;
-      if(entries[++pos] == target) return pos;
-      if(entries[++pos] == target) return pos;
-      do { ++pos; } while(entries[pos] != target);
-      scanned += unsigned(pos - start);
-      return pos;
+      const int* first = entries + start;
+      const int* pos = first;
+      if(*pos == target) return int(pos - entries);
+      if(*++pos == target) return int(pos - entries);
+      if(*++pos == target) return int(pos - entries);
+      if(*++pos == target) return int(pos - entries);
+      ++pos;
+
+      // The pivot row is present. Check each entry before advancing so
+      // the unrolled scan needs no separate end test.
+      while(*pos != target)
+      {
+         if(*++pos == target)
+            break;
+
+         if(*++pos == target)
+            break;
+
+         if(*++pos == target)
+            break;
+
+         ++pos;
+      }
+
+      scanned += std::uint64_t(pos - first);
+      return int(pos - entries);
    };
 
 
    if(indexed)
+   try
    {
       // Match the current row and column files, including earlier tail swaps.
       // Group row-file positions by column before constructing both directions.
@@ -1718,6 +1739,11 @@ void CLUFactor<R>::colSingletonsImpl(int firstrow)
          }
       }
    }
+   catch(const std::bad_alloc&)
+   {
+      throw SPxMemoryException("Error allocating singleton position index");
+   }
+
 
    /*  Iteratively update column counts due to removed column singletons
     *  thereby removing new arising columns singletons
