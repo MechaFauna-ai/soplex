@@ -230,12 +230,16 @@ protected:
    std::shared_ptr<Tolerances> _tolerances; ///< Tolerances for the factorization
    ///@}
 
+   /// Invalidate the forward-solve lookup after a basis load or assignment.
+   void clearLrightLookup() { lrightColumnLookup.clear(); }
+
 private:
 
    //----------------------------------------
    /**@name Private data */
    ///@{
    Temp    temp;              ///< Temporary storage
+   std::vector<int> lrightColumnLookup; ///< lazy row-to-original-L-column map
    ///@}
 
    //----------------------------------------
@@ -283,6 +287,8 @@ private:
 
    void inline updateSolutionVectorLright(R change, int j, R& vec, int* idx, int& nnz);
    ///
+   int vSolveLrightBits(R* vec, int* ridx, int& rn, R eps);
+
    void vSolveLright(R* vec, int* ridx, int& rn, R eps);
    ///
    void vSolveLright2(R* vec, int* ridx, int& rn, R eps,

@@ -3087,6 +3087,7 @@ void CLUFactor<R>::factor(const SVectorBase<R>**
 
    l.start[0]    = 0;
    l.firstUpdate = 0;
+   lrightColumnLookup.clear();
    l.firstUnused = 0;
 
    temp.init(thedim);
@@ -5180,6 +5181,126 @@ void inline CLUFactor<R>::updateSolutionVectorLright(R change, int j, R& vec, in
       vec = -R(0);
 }
 
+// Bitmap of pending original L columns. Lazy child initialization avoids a
+// dimension-sized clear; duplicate targets do not grow the frontier.
+class CLUFactorLrightQueue
+{
+   std::uint64_t words[1024];
+   std::uint64_t summaries[16];
+   std::uint64_t top;
+   static int firstBit(std::uint64_t value)
+   {
+      assert(value != 0);
+#if defined(__GNUC__) || defined(__clang__)
+      return __builtin_ctzll(value);
+#else
+      int bit = 0;
+      while((value & 1) == 0)
+      {
+         value >>= 1;
+         ++bit;
+      }
+      return bit;
+#endif
+   }
+public:
+   CLUFactorLrightQueue() : top(0) {}
+   void push(int column, int& count)
+   {
+      assert(column >= 0 && column < 65536);
+      const int word = column / 64;
+      const int group = word / 64;
+      const std::uint64_t bit = std::uint64_t(1) << (column % 64);
+      const std::uint64_t wordbit = std::uint64_t(1) << (word % 64);
+      const std::uint64_t groupbit = std::uint64_t(1) << group;
+      if((top & groupbit) == 0)
+      {
+         top |= groupbit;
+         summaries[group] = wordbit;
+         words[word] = bit;
+      }
+      else if((summaries[group] & wordbit) == 0)
+      {
+         summaries[group] |= wordbit;
+         words[word] = bit;
+      }
+      else
+      {
+         if((words[word] & bit) != 0) return;
+         words[word] |= bit;
+      }
+      ++count;
+   }
+   int pop(int& count)
+   {
+      const int group = firstBit(top);
+      const int word = group * 64 + firstBit(summaries[group]);
+      const int column = word * 64 + firstBit(words[word]);
+      words[word] &= ~(std::uint64_t(1) << (column % 64));
+      if(words[word] == 0)
+      {
+         summaries[group] &= ~(std::uint64_t(1) << (word % 64));
+         if(summaries[group] == 0)
+            top &= ~(std::uint64_t(1) << group);
+      }
+      --count;
+      return column;
+   }
+};
+
+// Original L columns form a triangular DAG in increasing column order.
+// Schedule only columns touched by the RHS, keeping the dense arithmetic.
+template <class R>
+int CLUFactor<R>::vSolveLrightBits(R* vec, int* ridx, int& rn, R eps)
+{
+   const int end = l.firstUpdate;
+   if(lrightColumnLookup.empty())
+   {
+      lrightColumnLookup.assign(thedim, -1);
+      for(int i = 0; i < end; ++i)
+         lrightColumnLookup[l.row[i]] = i;
+   }
+   CLUFactorLrightQueue queue;
+   int pending = 0;
+   auto enqueue = [&](int row)
+   {
+      const int column = lrightColumnLookup[row];
+      if(column >= 0)
+         queue.push(column, pending);
+   };
+   for(int z = 0; z < rn; ++z)
+      enqueue(ridx[z]);
+   int* lrow = l.row;
+   int* lbeg = l.start;
+   int* lidx = l.idx;
+   R* lval = l.val.data();
+   int processed = 0;
+   while(pending > 0)
+   {
+      const int i = queue.pop(pending);
+      const R x = vec[lrow[i]];
+      if(isNotZero(x, eps))
+      {
+         const int k = lbeg[i];
+         int* idx = &lidx[k];
+         R* val = &lval[k];
+         for(int j = lbeg[i + 1]; j > k; --j)
+         {
+            assert(*idx >= 0 && *idx < thedim);
+            const int n = *idx++;
+            updateSolutionVectorLright(x * (*val), n, vec[n], ridx, rn);
+            assert(lrightColumnLookup[n] < 0 || lrightColumnLookup[n] > i);
+            enqueue(n);
+            ++val;
+         }
+      }
+      if(++processed > std::max(32, (i + 1) / 4)
+            || pending > std::max(64, (end - i - 1) / 8))
+         return i + 1;
+   }
+   return end;
+}
+
 // solve Lz = b, inplace, using and preserving sparisity structure in the rhs and solution VectorBase<R>
 // arrays #vec and #ridx must be large enough to hold #thedim entries!
 template <class R>
@@ -5199,8 +5320,11 @@ void CLUFactor<R>::vSolveLright(R* vec, int* ridx, int& rn, R eps)
 
    end = l.firstUpdate;
 
+   int begin = 0;
+   if(thedim >= 8192 && end > 128 && end <= 65536 && rn < end / 8)
+      begin = vSolveLrightBits(vec, ridx, rn, eps);
    // loop through columns of L
-   for(i = 0; i < end; ++i)
+   for(i = begin; i < end; ++i)
    {
       x = vec[lrow[i]];
 
