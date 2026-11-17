@@ -24,12 +24,17 @@ int main()
       std::mt19937 random(4271);
       for(int trial = 0; trial < 200; ++trial)
       {
+         // The expensive LU consistency mode checks uniqueness quadratically.
+#ifdef SOPLEX_DEBUG
+         const int dim = 1 + random() % 64;
+#else
          const int dim = 1 + random() % 4096;
+#endif
          std::vector<int> heap(dim), permutation(dim);
          std::iota(heap.begin(), heap.end(), 0);
          std::shuffle(heap.begin(), heap.end(), random);
          for(int i = 0; i < dim; ++i)
-            permutation[i] = trial % 2 ? int(random() % 64) : i;
+            permutation[i] = i;
          std::priority_queue<int> reference;
          for(int i : heap)
             reference.push(permutation[i]);
@@ -37,11 +42,12 @@ int main()
          for(int i = 1; i < dim; ++i)
             check(heap[(i - 1) / 4] >= heap[i]);
          int count = dim;
+         int nextKey = dim;
          for(int step = 0; step < 2 * dim; ++step)
          {
             if(count == 0 || (count < dim && random() % 3 != 0))
             {
-               const int key = int(random() % 127);
+               const int key = nextKey++;
                soplex::enQueueMax(heap.data(), &count, key);
                reference.push(key);
             }
@@ -81,6 +87,22 @@ int main()
                minimum.pop();
             }
          }
+      }
+      // Equal priorities also pop correctly. Descending values form a valid
+      // four-child heap; avoid the builders' LU-specific uniqueness contract.
+      std::vector<int> ties(257);
+      std::priority_queue<int> reference;
+      for(int& key : ties)
+      {
+         key = int(random() % 16);
+         reference.push(key);
+      }
+      std::sort(ties.begin(), ties.end(), std::greater<int>());
+      int count = int(ties.size());
+      while(count > 0)
+      {
+         check(soplex::deQueueMax(ties.data(), &count) == reference.top());
+         reference.pop();
       }
       return 0;
    }

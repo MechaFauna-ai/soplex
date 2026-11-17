@@ -110,6 +110,9 @@ protected:
       std::vector<R>   s_max;        ///< maximum absolute value per row (or -1)
       int*    s_cact;       ///< lengths of columns of active submatrix
       int     stage;        ///< stage of the structure
+      // Positive dimension: s_mark contains the solve lookup. Negative
+      // dimension: allocated length, with factorization contents. Zero: unknown.
+      int     lrightLookupDim;
       Pring   pivots;       ///< ring of selected pivot rows
       Pring*  pivot_col;    ///< column index handlers for R linked list
       Pring*  pivot_colNZ;  ///< lists for columns to number of nonzeros
@@ -230,6 +233,13 @@ protected:
    std::shared_ptr<Tolerances> _tolerances; ///< Tolerances for the factorization
    ///@}
 
+   /// Invalidate the forward-solve lookup after a basis load or assignment.
+   void clearLrightLookup()
+   {
+      if(temp.lrightLookupDim > 0)
+         temp.lrightLookupDim = -temp.lrightLookupDim;
+   }
+
 private:
 
    //----------------------------------------
@@ -283,6 +293,8 @@ private:
 
    void inline updateSolutionVectorLright(R change, int j, R& vec, int* idx, int& nnz);
    ///
+   int vSolveLrightBits(R* vec, int* ridx, int& rn, R eps);
+
    void vSolveLright(R* vec, int* ridx, int& rn, R eps);
    ///
    void vSolveLright2(R* vec, int* ridx, int& rn, R eps,

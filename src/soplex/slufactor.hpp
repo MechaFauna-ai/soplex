@@ -743,6 +743,7 @@ typename SLUFactor<R>::Status SLUFactor<R>::change(
 template <class R>
 void SLUFactor<R>::clear()
 {
+   this->clearLrightLookup();
 
    this->rowMemMult    = 5;          /* factor of minimum Memory * #of nonzeros */
    this->colMemMult    = 5;          /* factor of minimum Memory * #of nonzeros */
@@ -829,6 +830,7 @@ void SLUFactor<R>::clear()
 template <class R>
 void SLUFactor<R>::assign(const SLUFactor<R>& old)
 {
+   this->clearLrightLookup();
    this->spxout = old.spxout;
 
    solveTime = TimerFactory::createTimer(old.solveTime->type());
