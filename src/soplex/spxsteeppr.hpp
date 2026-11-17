@@ -271,6 +271,13 @@ bool pairedWeightDots(const SVectorBase<Real>& first, const SVectorBase<Real>& s
       sum = total;
    }
    const __m128d result = _mm_add_pd(sum, correction);
+   // Preserve the scalar handling of nonfinite dot products, including NaNs.
+   if(_mm_movemask_pd(_mm_cmpord_pd(result, result)) != 3)
+   {
+      firstDot = first * work;
+      secondDot = second * work;
+      return true;
+   }
    _mm_store_sd(&firstDot, result);
    _mm_storeh_pd(&secondDot, result);
    return true;
