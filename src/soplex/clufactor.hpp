@@ -25,6 +25,8 @@
 #include <assert.h>
 #include <algorithm>
 #include <functional>
+#include <cstdint>
+#include <new>
 #include "soplex/cring.h"
 
 namespace soplex
@@ -1652,6 +1654,13 @@ void CLUFactor<R>::initFactorMatrix(const SVectorBase<R>** vec, const R eps)
 template <class R>
 void CLUFactor<R>::colSingletons()
 {
+   colSingletonsImpl<false>(0);
+}
+
+template <class R>
+template <bool indexed>
+void CLUFactor<R>::colSingletonsImpl(int firstrow)
+{
    int i, j, k, n;
    int len;
    int p_col, p_row, newrow;
@@ -1659,6 +1668,81 @@ void CLUFactor<R>::colSingletons()
    int* rorig = row.orig;
    int* rperm = row.perm;
    int* sing = temp.s_mark;
+   std::vector<int> rowToCol, colToRow;
+   std::uint64_t scanned = 0;
+   // Amortize index construction against work already spent in linear scans.
+   const std::uint64_t indexThreshold = 64ULL * u.col.used;
+
+   // Short searches do not justify an index. Only account work after the
+   // first four comparisons, keeping the common cases free of accounting.
+   const auto findRow = [&scanned](const int* entries, int start, int target) {
+      const int* first = entries + start;
+      const int* pos = first;
+      if(*pos == target) return int(pos - entries);
+      if(*++pos == target) return int(pos - entries);
+      if(*++pos == target) return int(pos - entries);
+      if(*++pos == target) return int(pos - entries);
+      ++pos;
+
+      // The pivot row is present. Check each entry before advancing so
+      // the unrolled scan needs no separate end test.
+      while(*pos != target)
+      {
+         if(*++pos == target)
+            break;
+
+         if(*++pos == target)
+            break;
+
+         if(*++pos == target)
+            break;
+
+         ++pos;
+      }
+
+      scanned += std::uint64_t(pos - first);
+      return int(pos - entries);
+   };
+
+
+   if(indexed)
+   try
+   {
+      // Match the current row and column files, including earlier tail swaps.
+      // Group row-file positions by column before constructing both directions.
+      rowToCol.resize(u.row.used);
+      colToRow.resize(u.col.used);
+      std::vector<int> offsets(thedim + 1, 0);
+      for(int colno = 0; colno < thedim; ++colno)
+         offsets[colno + 1] = offsets[colno] + u.col.len[colno];
+      std::vector<int> cursor(offsets);
+      std::vector<int> rowPositions(offsets.back());
+      std::vector<int> rowIds(u.row.used);
+      for(int rowno = 0; rowno < thedim; ++rowno)
+         for(int pos = u.row.start[rowno], end = pos + u.row.len[rowno]; pos < end; ++pos)
+         {
+            rowPositions[cursor[u.row.idx[pos]]++] = pos;
+            rowIds[pos] = rowno;
+         }
+      std::vector<int> positions(thedim);
+      for(int colno = 0; colno < thedim; ++colno)
+      {
+         assert(cursor[colno] == offsets[colno + 1]);
+         for(int pos = u.col.start[colno], end = pos + u.col.len[colno]; pos < end; ++pos)
+            positions[u.col.idx[pos]] = pos;
+         for(int slot = offsets[colno]; slot < offsets[colno + 1]; ++slot)
+         {
+            const int rowpos = rowPositions[slot];
+            const int colpos = positions[rowIds[rowpos]];
+            rowToCol[rowpos] = colpos;
+            colToRow[colpos] = rowpos;
+         }
+      }
+   }
+   catch(const std::bad_alloc&)
+   {
+      throw SPxMemoryException("Error allocating singleton position index");
+   }
 
 
    /*  Iteratively update column counts due to removed column singletons
@@ -1667,7 +1751,7 @@ void CLUFactor<R>::colSingletons()
     *  until no more can be found.
     */
 
-   for(i = 0; i < temp.stage; ++i)
+   for(i = firstrow; i < temp.stage; ++i)
    {
       p_row = rorig[i];
       assert(p_row >= 0);
@@ -1683,14 +1767,26 @@ void CLUFactor<R>::colSingletons()
 
          n = u.col.start[p_col] + u.col.len[p_col] - temp.s_cact[p_col];
 
-         for(k = n; u.col.idx[k] != p_row; ++k)
-            ;
+         if(indexed)
+            k = rowToCol[u.row.start[p_row] + j];
+         else
+         {
+            k = findRow(u.col.idx, n, p_row);
+         }
 
          assert(k < u.col.start[p_col] + u.col.len[p_col]);
 
          u.col.idx[k] = u.col.idx[n];
 
          u.col.idx[n] = p_row;
+
+         if(indexed)
+         {
+            // Two row entries have exchanged their column-file positions.
+            std::swap(colToRow[k], colToRow[n]);
+            rowToCol[colToRow[k]] = k;
+            rowToCol[colToRow[n]] = n;
+         }
 
          n = --(temp.s_cact[p_col]);          /* column nonzeros of ACTIVE matrix */
 
@@ -1725,12 +1821,26 @@ void CLUFactor<R>::colSingletons()
             u.row.val[k] = u.row.val[n];
 
             u.row.idx[k] = u.row.idx[n];
+
+            if(indexed)
+            {
+               // The last row entry moves into the removed pivot's slot.
+               colToRow[rowToCol[n]] = k;
+               rowToCol[k] = rowToCol[n];
+            }
          }
          else if(n == 0)
          {
             this->stat = SLinSolver<R>::SINGULAR;
             return;
          }
+      }
+
+      // Resume the same queue only between complete pivot rows.
+      if(!indexed && scanned > indexThreshold && i + 1 < temp.stage)
+      {
+         colSingletonsImpl<true>(i + 1);
+         return;
       }
    }
 
