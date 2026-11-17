@@ -24,6 +24,7 @@
 
 #include <assert.h>
 #include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <cstdint>
 #include <new>
@@ -53,7 +54,58 @@ static const Real verySparseFactor = 0.001;
 static const Real verySparseFactor4right = 0.2;
 static const Real verySparseFactor4left  = 0.01;
 
-/* generic heap management */
+/* Four children reduce the number of levels in priority-ordered max-heaps.
+ * The maximum value sequence is unchanged, including ties; callers do not
+ * observe the physical positions of equal values in the heap. */
+template <class Compare>
+static inline void siftHeap(int* heap, int size, int parent, int elem, Compare compare)
+{
+   const std::size_t count = static_cast<std::size_t>(size);
+   std::size_t child = 4 * static_cast<std::size_t>(parent) + 1;
+
+   while(child + 3 < count)
+   {
+      const int a = heap[child];
+      const int b = heap[child + 1];
+      const int c = heap[child + 2];
+      const int d = heap[child + 3];
+      const bool second = compare(a, b);
+      const bool fourth = compare(c, d);
+      const int left = second ? b : a;
+      const int right = fourth ? d : c;
+      const bool rightPair = compare(left, right);
+      const int best = rightPair ? right : left;
+      const std::size_t bestIndex = child + second
+                                   + static_cast<int>(rightPair) * (2 + fourth - second);
+
+      if(!compare(elem, best))
+      {
+         heap[parent] = elem;
+         return;
+      }
+
+      heap[parent] = best;
+      parent = static_cast<int>(bestIndex);
+      child = 4 * static_cast<std::size_t>(parent) + 1;
+   }
+
+   if(child < count)
+   {
+      std::size_t best = child;
+
+      for(std::size_t next = child + 1; next < count; ++next)
+         best = compare(heap[best], heap[next]) ? next : best;
+
+      if(compare(elem, heap[best]))
+      {
+         heap[parent] = heap[best];
+         parent = static_cast<int>(best);
+      }
+   }
+
+   heap[parent] = elem;
+}
+
 template <class Compare>
 static inline void initHeap(int* heap, int size, const int* permutation, Compare compare)
 {
@@ -82,6 +134,29 @@ static inline void initHeap(int* heap, int size, const int* permutation, Compare
 #endif
 }
 
+// Explicit construction keeps comparator types from silently changing arity.
+// Min-heaps retain the original binary layout for Forest-Tomlin array consumers.
+static inline void initMaxHeap(int* heap, int size, const int* permutation)
+{
+   for(int i = 0; i < size; ++i)
+   {
+      heap[i] = permutation[heap[i]];
+      if(i > 0 && heap[(i - 1) / 4] < heap[i])
+      {
+         for(++i; i < size; ++i)
+            heap[i] = permutation[heap[i]];
+         for(int parent = (size - 2) / 4; parent >= 0; --parent)
+            siftHeap(heap, size, parent, heap[parent], std::less<int>());
+         break;
+      }
+   }
+#ifdef SOPLEX_DEBUG
+   for(int i = 1; i < size; ++i)
+      for(int j = 0; j < i; ++j)
+         assert(heap[i] != heap[j]);
+#endif
+}
+
 static inline void enQueueMax(int* heap, int* size, int elem)
 {
    int i, j;
@@ -90,7 +165,7 @@ static inline void enQueueMax(int* heap, int* size, int elem)
 
    while(j > 0)
    {
-      i = (j - 1) / 2;
+      i = (j - 1) / 4;
 
       if(elem > heap[i])
       {
@@ -115,41 +190,9 @@ static inline void enQueueMax(int* heap, int* size, int elem)
 
 static inline int deQueueMax(int* heap, int* size)
 {
-   int e, elem;
-   int i, j, s;
-   int e1, e2;
-
-   elem = *heap;
-   e = heap[s = --(*size)];
-   --s;
-
-   for(j = 0, i = 1; i < s; i = 2 * j + 1)
-   {
-      // Select the larger child without a branch, preferring the right child
-      // on ties as before.
-      e1 = heap[i];
-      e2 = heap[i + 1];
-      i += (e1 <= e2);
-      e1 = e1 > e2 ? e1 : e2;
-
-      if(e >= e1)
-      {
-         heap[j] = e;
-         return elem;
-      }
-
-      heap[j] = e1;
-      j = i;
-   }
-
-   if(i < *size && e < heap[i])
-   {
-      heap[j] = heap[i];
-      j = i;
-   }
-
-   heap[j] = e;
-
+   const int elem = heap[0];
+   const int last = heap[--(*size)];
+   siftHeap(heap, *size, 0, last, std::less<int>());
    return elem;
 }
 
@@ -4913,7 +4956,7 @@ int CLUFactor<R>::solveLleft(R eps, R* vec, int* nonz, int rn)
    else
    {
       // move rhsidx to a heap
-      initHeap(nonz, rn, rperm, std::less<int>());
+      initMaxHeap(nonz, rn, rperm);
 
       while(rn > 0)
       {
