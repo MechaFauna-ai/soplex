@@ -743,6 +743,8 @@ typename SLUFactor<R>::Status SLUFactor<R>::change(
 template <class R>
 void SLUFactor<R>::clear()
 {
+   // Retain independent accepted factors across basis resets, like allocated
+   // working storage. Full matrix and parameter keys still guard every reuse.
    this->clearLrightLookup();
 
    this->rowMemMult    = 5;          /* factor of minimum Memory * #of nonzeros */
@@ -830,6 +832,7 @@ void SLUFactor<R>::clear()
 template <class R>
 void SLUFactor<R>::assign(const SLUFactor<R>& old)
 {
+   factorCacheClear();
    this->clearLrightLookup();
    this->spxout = old.spxout;
 
@@ -1440,13 +1443,20 @@ typename SLUFactor<R>::Status SLUFactor<R>::load(const SVectorBase<R>* matrix[],
    this->u.col.max[this->thedim]   = 0;
    this->u.col.len[this->thedim]   = 0;
 
+   const int cacheSlot = factorCacheBegin(matrix, dm);
+   bool restored = false;
+   R factoredThreshold = lastThreshold;
+
    for(;;)
    {
       ///@todo if the factorization fails with stat = SINGULAR, distinuish between proven singularity (e.g., because of
       ///an empty column) and singularity due to numerics, that could be avoided by changing minStability and
       ///lastThreshold; in the first case, we want to abort, otherwise change the numerics
       this->stat = this->OK;
-      this->factor(matrix, lastThreshold, this->tolerances()->epsilonFactorization());
+      factoredThreshold = lastThreshold;
+      restored = factorCacheRestore(cacheSlot, matrix);
+      if(!restored)
+         this->factor(matrix, lastThreshold, this->tolerances()->epsilonFactorization());
 
       // finish if the factorization is stable
       if(stability() >= minStability)
@@ -1467,6 +1477,9 @@ typename SLUFactor<R>::Status SLUFactor<R>::load(const SVectorBase<R>* matrix[],
                     "ISLUFA01 refactorizing with increased Markowitz threshold: "
                     << lastThreshold << std::endl;)
    }
+
+   if(!restored && this->stat == this->OK && lastThreshold == factoredThreshold)
+      factorCacheRemember(cacheSlot, matrix);
 
    SPxOut::debug(this, "DSLUFA02 threshold = {} \tstability = {}\tminStability = {}\n", lastThreshold,
                  stability(), minStability);

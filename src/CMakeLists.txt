@@ -142,6 +142,7 @@ foreach(header_file
       soplex/slinsolver_rational.h
       soplex/slufactor.h
       soplex/slufactor.hpp
+      soplex/slufactorcache.hpp
       soplex/slufactor_rational.h
       soplex/slufactor_rational.hpp
       soplex/solbase.h
