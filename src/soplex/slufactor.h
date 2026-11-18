@@ -29,6 +29,15 @@
 #define _SLUFACTOR_H_
 
 #include <assert.h>
+#include <array>
+#include <cstdint>
+#include <cstring>
+#include <cfenv>
+#include <cfloat>
+#include <type_traits>
+#if defined(__SSE2__)
+#include <xmmintrin.h>
+#endif
 
 #include "soplex/spxdefines.h"
 #include "soplex/timerfactory.h"
@@ -65,6 +74,37 @@ public:
    ///@}
 
 private:
+
+   // Optional memoization of accepted factorizations. Pointer tuples are only
+   // an admission filter; matrix values and controls are checked in full.
+   struct FactorImage
+   {
+      std::vector<R> diag, urval, ucval, lval, lrval;
+      std::vector<int> rp, ro, cp, co, uridx, urstart, urlen, urmax, urorder;
+      std::vector<int> ucidx, ucstart, uclen, ucmax, ucorder;
+      std::vector<int> lidx, lstart, lrow, lridx, lrbeg, lrorig, lrperm;
+      int urused, ucused, firstUpdate, firstUnused, updateType, nz;
+      R initMaxabs, maxabs;
+   };
+   struct FactorSlot
+   {
+      std::vector<const SVectorBase<R>*> pointers;
+      std::vector<uint64_t> key;
+      std::shared_ptr<FactorImage> image;
+      uint64_t hash = 0, tick = 0;
+      unsigned visits = 0;
+   };
+   std::array<FactorSlot, 4> factorSlots;
+   uint64_t factorTick = 0;
+   uint64_t factorHits = 0;
+   bool factorCacheEnabled() const;
+   int factorCacheBegin(const SVectorBase<R>* matrix[], int dm);
+   bool factorCacheKey(const SVectorBase<R>* matrix[], std::vector<uint64_t>& key) const;
+   bool factorCacheRestore(int slot, const SVectorBase<R>* matrix[]);
+   void factorCacheRemember(int slot, const SVectorBase<R>* matrix[]);
+   void factorCacheClear();
+   std::shared_ptr<FactorImage> factorImage() const;
+   void restoreFactorImage(const FactorImage& image);
 
    //--------------------------------
    /**@name Private data */
@@ -282,6 +322,9 @@ public:
       return solveCount;
    }
    /// reset timers and counters
+   /// Successful factor-image reuses over this object's lifetime.
+   uint64_t factorCacheHits() const { return factorHits; }
+
    void resetCounters()
    {
       this->factorTime->reset();
@@ -343,5 +386,6 @@ private:
 
 } // namespace soplex
 
+#include "slufactorcache.hpp"
 #include "slufactor.hpp"
 #endif // _SLUFACTOR_H_
