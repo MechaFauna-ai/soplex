@@ -24,6 +24,11 @@
 
 #include <math.h>
 
+#if defined(__SSE2__) && !defined(WITH_FLOAT) && !defined(WITH_LONG_DOUBLE) \
+   && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
+#include <emmintrin.h>
+#endif
+
 #include "soplex/spxdefines.h"
 
 #define SOPLEX_DEVEX_REFINETOL 2.0
@@ -126,6 +131,71 @@ void SPxDevexPR<R>::setRep(typename SPxSolverBase<R>::Representation)
 // A namespace to avoid collision with other pricers
 namespace devexpr
 {
+template <class R>
+inline bool densePriceCandidates(const R*, const R*, int, int, int, const R&, R&, int&)
+{
+   return false;
+}
+
+#if defined(__SSE2__) && !defined(WITH_FLOAT) && !defined(WITH_LONG_DOUBLE) \
+   && defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 0
+// Screen eight consecutive rows together. Evaluate prices only for eligible
+// rows, in their original order, so strict comparisons keep the first winner.
+inline bool densePriceCandidates(const Real* test, const Real* weight, int start, int end,
+                                 int incr, Real tolerance, Real& best, int& bestIndex)
+{
+   if(incr != 1 || end - start < 16)
+      return false;
+
+   const __m128d threshold = _mm_set1_pd(-tolerance);
+   bestIndex = -1;
+   for(; start <= end - 8; start += 8)
+   {
+      unsigned int eligible =
+         unsigned(_mm_movemask_pd(_mm_cmplt_pd(_mm_loadu_pd(test + start), threshold)))
+         | (unsigned(_mm_movemask_pd(_mm_cmplt_pd(_mm_loadu_pd(test + start + 2), threshold))) << 2)
+         | (unsigned(_mm_movemask_pd(_mm_cmplt_pd(_mm_loadu_pd(test + start + 4), threshold))) << 4)
+         | (unsigned(_mm_movemask_pd(_mm_cmplt_pd(_mm_loadu_pd(test + start + 6), threshold))) << 6);
+      while(eligible != 0)
+      {
+#if defined(__GNUC__) || defined(__clang__)
+         const int offset = __builtin_ctz(eligible);
+#else
+         const unsigned int first = eligible & -eligible;
+         int offset = (first & 0xf0) != 0 ? 4 : 0;
+         offset += (first & 0xcc) != 0 ? 2 : 0;
+         offset += (first & 0xaa) != 0 ? 1 : 0;
+#endif
+         const int index = start + offset;
+         const Real value = test[index];
+         const Real price = value * value
+                            / (weight[index] < tolerance ? tolerance : weight[index]);
+         if(price > best)
+         {
+            best = price;
+            bestIndex = index;
+         }
+         eligible &= eligible - 1;
+      }
+   }
+   for(; start < end; ++start)
+   {
+      const Real value = test[start];
+      if(value < -tolerance)
+      {
+         const Real price = value * value
+                            / (weight[start] < tolerance ? tolerance : weight[start]);
+         if(price > best)
+         {
+            best = price;
+            bestIndex = start;
+         }
+      }
+   }
+   return true;
+}
+#endif
+
 template <class R>
 R computePrice(R viol, R weight, R tol)
 {
@@ -882,9 +952,21 @@ SPxId SPxDevexPR<R>::selectEnterDenseDim(R& best, R feastol, int start, int incr
    const R* cpen = this->thesolver->coWeights.get_const_ptr();
    int end = this->thesolver->coWeights.dim();
    int enterIdx = -1;
-   R x;
 
    assert(end == this->thesolver->coTest().dim());
+
+   if(devexpr::densePriceCandidates(cTest, cpen, start, end, incr, feastol, best, enterIdx))
+   {
+      if(enterIdx >= 0)
+      {
+         last = cpen[enterIdx];
+         return this->thesolver->coId(enterIdx);
+      }
+      return SPxId();
+   }
+
+   R x;
+
 
    for(; start < end; start += incr)
    {
@@ -916,9 +998,21 @@ SPxId SPxDevexPR<R>::selectEnterDenseCoDim(R& best, R feastol, int start, int in
    const R* pen = this->thesolver->weights.get_const_ptr();
    int end = this->thesolver->weights.dim();
    int enterIdx = -1;
-   R x;
 
    assert(end == this->thesolver->test().dim());
+
+   if(devexpr::densePriceCandidates(test, pen, start, end, incr, feastol, best, enterIdx))
+   {
+      if(enterIdx >= 0)
+      {
+         last = pen[enterIdx];
+         return this->thesolver->id(enterIdx);
+      }
+      return SPxId();
+   }
+
+   R x;
+
 
    for(; start < end; start += incr)
    {
