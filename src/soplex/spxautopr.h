@@ -58,7 +58,7 @@ private:
    int            steepDim;      ///< maximal basis dimension for using Steepest edge from the first iteration
    SPxPricer<R>*     activepricer;  ///< pointer to currently selected pricer
    SPxDevexPR<R>     devex;         ///< internal Devex pricer
-   SPxSteepExPR<R>     steep;         ///< internal Steepest edge pricer
+   SPxSteepPR<R>       steep;         ///< internal Steepest edge pricer (initial weights 1, "quick" steepest edge)
 
    bool setActivePricer(typename SPxSolverBase<R>::Type
                         type);          ///< switches active pricing method
