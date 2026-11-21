@@ -43,7 +43,9 @@ namespace soplex
    @ingroup Algo
 
    This pricer switches between Devex and Steepest edge pricer based on the difficulty of the problem
-   which is determined by the number of iterations.
+   which is determined by the number of iterations. Bases of dimension at most steepDim use Steepest edge from the
+   first iteration, because Devex needs considerably more iterations there; for larger bases, maintaining Steepest edge
+   weights is expensive, so Devex is used for the first switchIters iterations.
 
    See SPxPricer for a class documentation.
 */
@@ -53,6 +55,7 @@ class SPxAutoPR : public SPxPricer<R>
 private:
 
    int            switchIters;   ///< number of iterations before switching pricers
+   int            steepDim;      ///< maximal basis dimension for using Steepest edge from the first iteration
    SPxPricer<R>*     activepricer;  ///< pointer to currently selected pricer
    SPxDevexPR<R>     devex;         ///< internal Devex pricer
    SPxSteepExPR<R>     steep;         ///< internal Steepest edge pricer
@@ -69,6 +72,7 @@ public:
    SPxAutoPR()
       : SPxPricer<R>("Auto")
       , switchIters(10000)
+      , steepDim(50000)
       , activepricer(&devex)
       , devex()
       , steep()
@@ -77,6 +81,7 @@ public:
    SPxAutoPR(const SPxAutoPR& old)
       : SPxPricer<R>(old)
       , switchIters(old.switchIters)
+      , steepDim(old.steepDim)
       , devex(old.devex)
       , steep(old.steep)
    {
@@ -94,6 +99,7 @@ public:
       {
          SPxPricer<R>::operator=(rhs);
          switchIters = rhs.switchIters;
+         steepDim = rhs.steepDim;
          devex = rhs.devex;
          steep = rhs.steep;
 
@@ -122,6 +128,11 @@ public:
    ///@{
    /// set max number of iterations before switching pricers
    void setSwitchIters(int iters);
+   /// set maximal basis dimension for using Steepest edge from the first iteration
+   void setSteepDim(int dim)
+   {
+      steepDim = dim;
+   }
    /// clear the data
    void clear();
    /// set tolerances of internal pricers
