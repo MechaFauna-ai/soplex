@@ -71,8 +71,11 @@ void SPxAutoPR<R>::setRep(typename SPxSolverBase<R>::Representation rep)
 template <class R>
 bool SPxAutoPR<R>::setActivePricer(typename SPxSolverBase<R>::Type type)
 {
-   // switch to steep as soon as switchIters is reached
-   if(activepricer == &devex && this->thesolver->iterations() >= switchIters)
+   // small bases use steep from the first iteration
+   const int curswitchiters = (this->thesolver->dim() <= steepDim) ? 0 : switchIters;
+
+   // switch to steep as soon as curswitchiters is reached
+   if(activepricer == &devex && this->thesolver->iterations() >= curswitchiters)
    {
       activepricer = &steep;
       activepricer->setType(type);
@@ -80,8 +83,8 @@ bool SPxAutoPR<R>::setActivePricer(typename SPxSolverBase<R>::Type type)
    }
 
 
-   // use devex for the iterations < switchIters
-   else if(activepricer == &steep && this->thesolver->iterations() < switchIters)
+   // use devex for the iterations < curswitchiters
+   else if(activepricer == &steep && this->thesolver->iterations() < curswitchiters)
    {
       activepricer = &devex;
       activepricer->setType(type);

@@ -4,6 +4,7 @@ Release 9.0.0
 features:
 
 performance:
+- the automatic pricer (default) uses steepest edge pricing from the first iteration if the basis dimension is at most 50000 (new SPxAutoPR<R>::setSteepDim()); before, it always used devex for the first 10000 iterations, which needs about twice as many iterations on such LPs
 - SPxBoundFlippingRT<R>::selectEnter() and selectLeave() double the batch size of the partial breakpoint sort after each sort instead of sorting four more breakpoints per call; passing many breakpoints no longer re-partitions the unsorted tail once per four breakpoints (quadratic); ties between breakpoints with equal values may be processed in a different order
 - SSVectorBase<double>::setup() skips blocks of four entries that are already +0 when it collects the nonzeros of a dense vector, instead of testing and resetting every entry; same result
 - SoPlexBase<R>::getBasisInverseRowReal() in row representation determines only the needed entry of the basis index array instead of computing the whole array in each call; same result
