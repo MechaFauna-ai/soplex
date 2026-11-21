@@ -720,7 +720,7 @@ SPxId SPxBoundFlippingRT<R>::selectEnter(
 
    // pointer to end of sorted part of breakpoints
    int sorted = 1;
-   // minimum number of entries that are supposed to be sorted by partial sort
+   // minimum number of entries that are supposed to be sorted by the next partial sort (doubled after each sort)
    int sortsize = 4;
 
    // get all skipable breakpoints
@@ -730,6 +730,10 @@ SPxId SPxBoundFlippingRT<R>::selectEnter(
       if(npassedBp >= sorted)
       {
          sorted = SPxQuicksortPart(breakpoints.get_ptr(), compare, sorted, nBp, sortsize);
+         /* grow the batch geometrically: each partial sort re-partitions the whole unsorted tail, so a
+          * constant batch size makes passing many breakpoints quadratic */
+         if(sortsize < nBp)
+            sortsize *= 2;
       }
 
       int i = breakpoints[npassedBp].idx;
@@ -803,6 +807,10 @@ SPxId SPxBoundFlippingRT<R>::selectEnter(
       if(stableBp >= sorted)
       {
          sorted = SPxQuicksortPart(breakpoints.get_ptr(), compare, sorted, nBp, sortsize);
+         /* grow the batch geometrically: each partial sort re-partitions the whole unsorted tail, so a
+          * constant batch size makes passing many breakpoints quadratic */
+         if(sortsize < nBp)
+            sortsize *= 2;
       }
 
       int idx = breakpoints[stableBp].idx;
@@ -1086,7 +1094,7 @@ int SPxBoundFlippingRT<R>::selectLeave(
 
    // pointer to end of sorted part of breakpoints
    int sorted = 1;
-   // minimum number of entries that are supposed to be sorted by partial sort
+   // minimum number of entries that are supposed to be sorted by the next partial sort (doubled after each sort)
    int sortsize = 4;
 
    // get all skipable breakpoints
@@ -1096,6 +1104,10 @@ int SPxBoundFlippingRT<R>::selectLeave(
       if(npassedBp >= sorted)
       {
          sorted = SPxQuicksortPart(breakpoints.get_ptr(), compare, sorted, nBp, sortsize);
+         /* grow the batch geometrically: each partial sort re-partitions the whole unsorted tail, so a
+          * constant batch size makes passing many breakpoints quadratic */
+         if(sortsize < nBp)
+            sortsize *= 2;
       }
 
       assert(breakpoints[npassedBp].src == FVEC);
@@ -1155,6 +1167,10 @@ int SPxBoundFlippingRT<R>::selectLeave(
       if(stableBp >= sorted)
       {
          sorted = SPxQuicksortPart(breakpoints.get_ptr(), compare, sorted, nBp, sortsize);
+         /* grow the batch geometrically: each partial sort re-partitions the whole unsorted tail, so a
+          * constant batch size makes passing many breakpoints quadratic */
+         if(sortsize < nBp)
+            sortsize *= 2;
       }
 
       int breakpointidx = breakpoints[stableBp].idx;

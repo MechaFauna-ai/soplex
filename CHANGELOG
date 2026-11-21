@@ -4,6 +4,7 @@ Release 9.0.0
 features:
 
 performance:
+- SPxBoundFlippingRT<R>::selectEnter() and selectLeave() double the batch size of the partial breakpoint sort after each sort instead of sorting four more breakpoints per call; passing many breakpoints no longer re-partitions the unsorted tail once per four breakpoints (quadratic); ties between breakpoints with equal values may be processed in a different order
 - SSVectorBase<double>::setup() skips blocks of four entries that are already +0 when it collects the nonzeros of a dense vector, instead of testing and resetting every entry; same result
 - SoPlexBase<R>::getBasisInverseRowReal() in row representation determines only the needed entry of the basis index array instead of computing the whole array in each call; same result
 - spxLdexp() for double scales normal numbers with a normal result by adjusting the exponent field instead of calling ldexp(); same result
