@@ -11,6 +11,7 @@ performance:
 - SPxScaler<R>::getColUnscaled() no longer copies the scaled column into the result vector before overwriting it with the unscaled entries; same result
 
 fixed bugs:
+- restore the eager basis reinitialization in SPxSolverBase<R>::invalidateBasis() (partly reverting 62b7862e, "Fix basis starter"); deferring it made SCIP about 6-7% slower on MIPLIB 2017 with upstream SoPlex (scipopt/soplex#61); the change to load LPs without a slack basis is kept, and with a configured starter the reinitialization stays deferred to solve() so that the starter still runs
 
 interface & parameters:
 - change the SOPLEX_REAL_FORMAT macro from fixed-point to general conversion to avoid trailing zeros

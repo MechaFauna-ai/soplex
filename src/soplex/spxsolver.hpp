@@ -573,8 +573,15 @@ void SPxSolverBase<R>::setType(Type tp)
    template <class R>
    void SPxSolverBase<R>::invalidateBasis()
    {
-      unInit();
       SPxBasisBase<R>::invalidate();
+      unInit();
+
+      /* reinitialize eagerly, which keeps warm-started re-solves cheap; initialization is deferred to solve() if a
+       * starter is configured, so that it can still generate the initial basis, or if a component that init() needs is
+       * not installed yet (solve() reports missing components)
+       */
+      if(thestarter == nullptr && slinSolver() != nullptr && thepricer != nullptr && theratiotester != nullptr)
+         init();
    }
 
    template <class R>
@@ -616,7 +623,8 @@ void SPxSolverBase<R>::setType(Type tp)
 
       if(!initialized)
       {
-         init();
+         init();  // not sure if init() is neccessary here
+         // we must not go on here because not all vectors (e.g. fVec) may be set up correctly
          return;
       }
 
