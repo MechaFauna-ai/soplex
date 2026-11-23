@@ -567,9 +567,7 @@ void SPxSolverBase<R>::setType(Type tp)
    void SPxSolverBase<R>::unscaleLPandReloadBasis()
    {
       SPxLPBase<R>::unscaleLP();
-      SPxBasisBase<R>::invalidate();
-      unInit();
-      init();
+      invalidateBasis();
    }
 
    template <class R>
