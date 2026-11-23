@@ -577,7 +577,12 @@ void SPxSolverBase<R>::setType(Type tp)
    {
       SPxBasisBase<R>::invalidate();
       unInit();
-      init();
+
+      /* reinitialize eagerly, which keeps warm-started re-solves cheap; if a starter is configured, initialization is
+       * deferred to solve() so that the starter can still generate the initial basis
+       */
+      if(thestarter == nullptr)
+         init();
    }
 
    template <class R>
