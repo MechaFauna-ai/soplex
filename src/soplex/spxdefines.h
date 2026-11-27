@@ -47,6 +47,14 @@
 #include <float.h>
 #endif
 
+#if defined(_MSC_VER)
+#define SOPLEX_RESTRICT __restrict
+#elif defined(__GNUC__) || defined(__clang__)
+#define SOPLEX_RESTRICT __restrict__
+#else
+#define SOPLEX_RESTRICT
+#endif
+
 #include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>

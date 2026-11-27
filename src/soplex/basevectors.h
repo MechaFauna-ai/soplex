@@ -619,9 +619,9 @@ SSVectorBase<R>& SSVectorBase<R>::assign2product1(const SVSetBase<S>& A, const S
    {
       const int lnum = Ai.size();
       num = lnum;
-      R* __restrict__ lval = VectorBase<R>::val.data();
-      int* __restrict__ lidx = idx;
-      const Nonzero<S>* __restrict__ elts = Ai.mem();
+      R* SOPLEX_RESTRICT lval = VectorBase<R>::val.data();
+      int* SOPLEX_RESTRICT lidx = idx;
+      const Nonzero<S>* SOPLEX_RESTRICT elts = Ai.mem();
 
       for(int j = lnum - 1; j >= 0; --j)
       {
@@ -659,8 +659,8 @@ SSVectorBase<R>& SSVectorBase<R>::assign2productShort(const SVSetBase<S>& A,
    const SVectorBase<S>& A0 = A[curidx];
    const int xsize = x.size();
    const R eps = this->getEpsilon();
-   R* __restrict__ lval = VectorBase<R>::val.data();
-   int* __restrict__ lidx = idx;
+   R* SOPLEX_RESTRICT lval = VectorBase<R>::val.data();
+   int* SOPLEX_RESTRICT lidx = idx;
    int lnum = num;
    int Aisize;
 
@@ -668,13 +668,14 @@ SSVectorBase<R>& SSVectorBase<R>::assign2productShort(const SVSetBase<S>& A,
    if(isNotZero(x0, eps))
    {
       Aisize = A0.size();
-      const Nonzero<S>* __restrict__ elts = A0.mem();
+      const Nonzero<S>* SOPLEX_RESTRICT elts = A0.mem();
 
       for(int j = 0; j < Aisize; ++j)
       {
          const int eidx = elts[j].idx;
          const R product = x0 * elts[j].val;
 
+         // count only non-zero values; not 'isNotZero(product, epsilon)'
          if(product != 0)
          {
             assert(lnum < len);
@@ -684,9 +685,9 @@ SSVectorBase<R>& SSVectorBase<R>::assign2productShort(const SVSetBase<S>& A,
       }
    }
 
-   // Compute the other x[i] * A[i] and add them to the existing vector.
-   const int* __restrict__ xidx = x.idx;
-   const T* __restrict__ xval = x.val.data();
+   // Compute the other x[i] * A[i] and add them to the existing vector (x != this is required by contract).
+   const int* SOPLEX_RESTRICT xidx = x.idx;
+   const T* SOPLEX_RESTRICT xval = x.val.data();
    for(int i = 1; i < xsize; ++i)
    {
       curidx = xidx[i];
@@ -694,7 +695,7 @@ SSVectorBase<R>& SSVectorBase<R>::assign2productShort(const SVSetBase<S>& A,
       const SVectorBase<S>& Ai = A[curidx];
 
       Aisize = Ai.size();
-      const Nonzero<S>* __restrict__ elts = Ai.mem();
+      const Nonzero<S>* SOPLEX_RESTRICT elts = Ai.mem();
 
       for(int j = 0; j < Aisize; ++j)
       {
@@ -702,16 +703,20 @@ SSVectorBase<R>& SSVectorBase<R>::assign2productShort(const SVSetBase<S>& A,
          const R oldval = lval[eidx];
          const R newval = oldval + xi * elts[j].val;
 
+         // If the value was positive zero, the position is still unused, so increase the counter.
          if(isPlusZero(oldval))
          {
             assert(lnum < len);
             lidx[lnum++] = eidx;
          }
 
+         // If the value becomes exactly 0, mark the index as used by setting negative zero.
          lval[eidx] = (newval != 0) ? newval : -R(0);
       }
    }
 
+   // Clean up by shifting all nonzeros (w.r.t. epsilon) to the front of idx,
+   // zeroing all values which are nearly 0, and setting #num# appropriately.
    int nz_counter = 0;
 
    for(int i = 0; i < lnum; ++i)
@@ -752,9 +757,9 @@ SSVectorBase<R>& SSVectorBase<R>::assign2productFull(const SVSetBase<S>& A,
    const int xsize = x.size();
    bool A_is_zero = true;
    int Aisize;
-   R* __restrict__ lval = VectorBase<R>::val.data();
-   const int* __restrict__ xidx = x.idx;
-   const T* __restrict__ xval = x.val.data();
+   R* SOPLEX_RESTRICT lval = VectorBase<R>::val.data();
+   const int* SOPLEX_RESTRICT xidx = x.idx;
+   const T* SOPLEX_RESTRICT xval = x.val.data();
 
    for(int i = 0; i < xsize; ++i)
    {
@@ -767,7 +772,7 @@ SSVectorBase<R>& SSVectorBase<R>::assign2productFull(const SVSetBase<S>& A,
          continue;
 
       A_is_zero = false;
-      const Nonzero<S>* __restrict__ elts = Ai.mem();
+      const Nonzero<S>* SOPLEX_RESTRICT elts = Ai.mem();
 
       for(int j = 0; j < Aisize; ++j)
          lval[elts[j].idx] += xi * elts[j].val;
