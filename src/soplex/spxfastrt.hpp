@@ -107,6 +107,328 @@ R SPxFastRT<R>::minStability(R maxabs)
  * epsilon, u < infinity): If u - vec[i] <= 0, vec[i] violates the upper bound. In the Harris ratio
  * test, we would compute (u - vec[i] + delta)/upd[i]. The code computes instead delta/upd[i].
  */
+namespace detail
+{
+template <class R>
+SOPLEX_ALWAYS_INLINE void evalMaxDelta(
+   int k,
+   R xv,
+   const R* SOPLEX_RESTRICT up,
+   const R* SOPLEX_RESTRICT low,
+   const R* SOPLEX_RESTRICT vec,
+   R epsZero,
+   R negEpsZero,
+   R inf,
+   R negInf,
+   R fdelta,
+   bool fastDivSkip,
+   R kSkipSlack,
+   R kSafeLo,
+   R kSafeHi,
+   R& mabs,
+   R& max,
+   bool& maxSafe,
+   R& maxSlack,
+   int& sel)
+{
+   if(xv > epsZero)
+   {
+      // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
+      mabs = (xv > mabs) ? xv : mabs;
+      const R u = up[k];
+
+      if(u < inf)
+      {
+         const R y = u - vec[k];
+
+         if(y <= 0)
+         {
+            const R ratio = fdelta / xv;
+            if(ratio < max)
+            {
+               max = ratio;
+               maxSafe = fastDivSkip && (max > kSafeLo && max < kSafeHi);
+               maxSlack = maxSafe ? max * kSkipSlack : R(0);
+               sel = k;
+            }
+         }
+         else
+         {
+            const R numer = y + fdelta;
+            if(!maxSafe || xv <= kSafeLo || xv >= kSafeHi || numer <= maxSlack * xv)
+            {
+               const R ratio = numer / xv;
+               if(ratio < max)
+               {
+                  max = ratio;
+                  maxSafe = fastDivSkip && (max > kSafeLo && max < kSafeHi);
+                  maxSlack = maxSafe ? max * kSkipSlack : R(0);
+                  sel = k;
+               }
+            }
+         }
+      }
+   }
+   else if(xv < negEpsZero)
+   {
+      // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
+      mabs = (-xv > mabs) ? -xv : mabs;
+      const R l = low[k];
+
+      if(l > negInf)
+      {
+         const R y = l - vec[k];
+
+         if(y >= 0)
+         {
+            const R ratio = -fdelta / xv;
+            if(ratio < max)
+            {
+               max = ratio;
+               maxSafe = fastDivSkip && (max > kSafeLo && max < kSafeHi);
+               maxSlack = maxSafe ? max * kSkipSlack : R(0);
+               sel = k;
+            }
+         }
+         else
+         {
+            const R numer = y - fdelta;
+            const R axv = -xv;
+            if(!maxSafe || axv <= kSafeLo || axv >= kSafeHi || -numer <= maxSlack * axv)
+            {
+               const R ratio = numer / xv;
+               if(ratio < max)
+               {
+                  max = ratio;
+                  maxSafe = fastDivSkip && (max > kSafeLo && max < kSafeHi);
+                  maxSlack = maxSafe ? max * kSkipSlack : R(0);
+                  sel = k;
+               }
+            }
+         }
+      }
+   }
+}
+
+template <class R>
+SOPLEX_ALWAYS_INLINE void evalMinDelta(
+   int k,
+   R xv,
+   const R* SOPLEX_RESTRICT up,
+   const R* SOPLEX_RESTRICT low,
+   const R* SOPLEX_RESTRICT vec,
+   R epsZero,
+   R negEpsZero,
+   R inf,
+   R negInf,
+   R fdelta,
+   bool fastDivSkip,
+   R kSkipSlack,
+   R kSafeLo,
+   R kSafeHi,
+   R& mabs,
+   R& max,
+   bool& maxSafe,
+   R& amaxSlack,
+   int& sel)
+{
+   if(xv > epsZero)
+   {
+      // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
+      mabs = (xv > mabs) ? xv : mabs;
+      const R l = low[k];
+
+      if(l > negInf)
+      {
+         const R y = l - vec[k];
+
+         if(y >= 0)
+         {
+            const R ratio = -fdelta / xv;
+            if(ratio > max)
+            {
+               max = ratio;
+               const R amax = -max;
+               maxSafe = fastDivSkip && (amax > kSafeLo && amax < kSafeHi);
+               amaxSlack = maxSafe ? amax * kSkipSlack : R(0);
+               sel = k;
+            }
+         }
+         else
+         {
+            const R numer = y - fdelta;
+            if(!maxSafe || xv <= kSafeLo || xv >= kSafeHi || -numer <= amaxSlack * xv)
+            {
+               const R ratio = numer / xv;
+               if(ratio > max)
+               {
+                  max = ratio;
+                  const R amax = -max;
+                  maxSafe = fastDivSkip && (amax > kSafeLo && amax < kSafeHi);
+                  amaxSlack = maxSafe ? amax * kSkipSlack : R(0);
+                  sel = k;
+               }
+            }
+         }
+      }
+   }
+   else if(xv < negEpsZero)
+   {
+      // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
+      mabs = (-xv > mabs) ? -xv : mabs;
+      const R u = up[k];
+
+      if(u < inf)
+      {
+         const R y = u - vec[k];
+
+         if(y <= 0)
+         {
+            const R ratio = fdelta / xv;
+            if(ratio > max)
+            {
+               max = ratio;
+               const R amax = -max;
+               maxSafe = fastDivSkip && (amax > kSafeLo && amax < kSafeHi);
+               amaxSlack = maxSafe ? amax * kSkipSlack : R(0);
+               sel = k;
+            }
+         }
+         else
+         {
+            const R numer = y + fdelta;
+            const R axv = -xv;
+            if(!maxSafe || axv <= kSafeLo || axv >= kSafeHi || numer <= amaxSlack * axv)
+            {
+               const R ratio = numer / xv;
+               if(ratio > max)
+               {
+                  max = ratio;
+                  const R amax = -max;
+                  maxSafe = fastDivSkip && (amax > kSafeLo && amax < kSafeHi);
+                  amaxSlack = maxSafe ? amax * kSkipSlack : R(0);
+                  sel = k;
+               }
+            }
+         }
+      }
+   }
+}
+
+template <class R>
+struct FastRTMaxEval
+{
+   const R* SOPLEX_RESTRICT up;
+   const R* SOPLEX_RESTRICT low;
+   const R* SOPLEX_RESTRICT vec;
+   R epsZero;
+   R negEpsZero;
+   R inf;
+   R negInf;
+   R fdelta;
+   bool fastDivSkip;
+   R kSkipSlack;
+   R kSafeLo;
+   R kSafeHi;
+   R& mabs;
+   R& max;
+   bool& maxSafe;
+   R& maxSlack;
+   int& sel;
+
+   SOPLEX_ALWAYS_INLINE void operator()(int k, R xv) const
+   {
+      evalMaxDelta(k, xv, up, low, vec, epsZero, negEpsZero, inf, negInf, fdelta,
+         fastDivSkip, kSkipSlack, kSafeLo, kSafeHi, mabs, max, maxSafe, maxSlack, sel);
+   }
+};
+
+template <class R>
+struct FastRTMinEval
+{
+   const R* SOPLEX_RESTRICT up;
+   const R* SOPLEX_RESTRICT low;
+   const R* SOPLEX_RESTRICT vec;
+   R epsZero;
+   R negEpsZero;
+   R inf;
+   R negInf;
+   R fdelta;
+   bool fastDivSkip;
+   R kSkipSlack;
+   R kSafeLo;
+   R kSafeHi;
+   R& mabs;
+   R& max;
+   bool& maxSafe;
+   R& amaxSlack;
+   int& sel;
+
+   SOPLEX_ALWAYS_INLINE void operator()(int k, R xv) const
+   {
+      evalMinDelta(k, xv, up, low, vec, epsZero, negEpsZero, inf, negInf, fdelta,
+         fastDivSkip, kSkipSlack, kSafeLo, kSafeHi, mabs, max, maxSafe, amaxSlack, sel);
+   }
+};
+
+template <class R, class SkipFn, class EvalFn>
+SOPLEX_ALWAYS_INLINE void scanFastRTSetup(
+   const UpdateVector<R>& update,
+   int start,
+   int incr,
+   SkipFn skipFn,
+   EvalFn evalFn)
+{
+   const R* SOPLEX_RESTRICT upd = update.delta().values();
+   const int* idx = update.delta().indexMem();
+   const int* last = idx + update.delta().size();
+
+   for(idx += start; idx < last; idx += incr)
+   {
+      const int k = *idx;
+      if(skipFn(k))
+         continue;
+      evalFn(k, upd[k]);
+   }
+}
+
+template <class R, class SkipFn, class EvalFn>
+SOPLEX_ALWAYS_INLINE void scanFastRTDense(
+   UpdateVector<R>& update,
+   R epsZero,
+   R negEpsZero,
+   SkipFn skipFn,
+   EvalFn evalFn)
+{
+   /* In this case, the indices of the semi-sparse VectorBase<R> update.delta() are not set up and are filled below. */
+   int* l_idx = update.delta().altIndexMem();
+   R* uval = update.delta().altValues();
+   const int dim = update.dim();
+
+   for(int k = 0; k < dim; ++k)
+   {
+      const R xv = uval[k];
+      if(xv != 0.0)
+      {
+         if(xv >= negEpsZero && xv <= epsZero)
+         {
+            uval[k] = 0.0;
+            continue;
+         }
+         *l_idx++ = k;
+
+         if(skipFn(k))
+            continue;
+
+         evalFn(k, xv);
+      }
+   }
+
+   update.delta().setSize(int(l_idx - update.delta().indexMem()));
+   update.delta().forceSetup();
+}
+} // namespace detail
+
 template <class R>
 int SPxFastRT<R>::maxDelta(
    R& val,                                /* on return: maximum step length */
@@ -136,128 +458,17 @@ int SPxFastRT<R>::maxDelta(
       leaving ? (iscoid ? this->thesolver->desc().coStatus() : this->thesolver->desc().status()) : nullptr;
    const int repSign = static_cast<int>(this->thesolver->rep());
    const bool fastDivSkip = std::is_same<R, double>::value;
-   // Slack factor (1 + 1e-12) safely exceeds ~3 ulp rounding error; operand range [1e-140, 1e140] guarantees
-   // max * |xv| neither overflows (avoiding spurious FE_OVERFLOW) nor underflows into subnormals.
+   // Slack factor (1 + 1e-12) safely exceeds ~3 ulp rounding error; operand range (1e-140, 1e140) guarantees
+   // (max * kSkipSlack) * |xv| neither overflows (avoiding spurious FE_OVERFLOW) nor underflows into subnormals.
    const R kSkipSlack = R(1) + R(1e-12);
    const R kSafeLo = R(1e-140);
    const R kSafeHi = R(1e140);
+   bool maxSafe = fastDivSkip && (max > kSafeLo && max < kSafeHi);
+   R maxSlack = maxSafe ? max * kSkipSlack : R(0);
 
-   auto evalMax = [&](int k, R xv) {
-      if(xv > epsZero)
-      {
-         // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
-         mabs = (xv > mabs) ? xv : mabs;
-         const R u = up[k];
-
-         if(u < inf)
-         {
-            const R y = u - vec[k];
-
-            if(y <= 0)
-            {
-               const R ratio = fdelta / xv;
-               if(ratio < max)
-               {
-                  max = ratio;
-                  sel = k;
-               }
-            }
-            else
-            {
-               const R numer = y + fdelta;
-               if(!fastDivSkip || max <= kSafeLo || max >= kSafeHi || xv <= kSafeLo || xv >= kSafeHi
-                     || numer <= (max * xv) * kSkipSlack)
-               {
-                  const R ratio = numer / xv;
-                  if(ratio < max)
-                  {
-                     max = ratio;
-                     sel = k;
-                  }
-               }
-            }
-         }
-      }
-      else if(xv < negEpsZero)
-      {
-         // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
-         mabs = (-xv > mabs) ? -xv : mabs;
-         const R l = low[k];
-
-         if(l > negInf)
-         {
-            const R y = l - vec[k];
-
-            if(y >= 0)
-            {
-               const R ratio = -fdelta / xv;
-               if(ratio < max)
-               {
-                  max = ratio;
-                  sel = k;
-               }
-            }
-            else
-            {
-               const R numer = y - fdelta;
-               const R axv = -xv;
-               if(!fastDivSkip || max <= kSafeLo || max >= kSafeHi || axv <= kSafeLo || axv >= kSafeHi
-                     || -numer <= (max * axv) * kSkipSlack)
-               {
-                  const R ratio = numer / xv;
-                  if(ratio < max)
-                  {
-                     max = ratio;
-                     sel = k;
-                  }
-               }
-            }
-         }
-      }
-   };
-
-   auto scanSetup = [&](auto skipFn) {
-      const R* SOPLEX_RESTRICT upd = update.delta().values();
-      const int* idx = update.delta().indexMem();
-      const int* last = idx + update.delta().size();
-
-      for(idx += start; idx < last; idx += incr)
-      {
-         const int k = *idx;
-         if(skipFn(k))
-            continue;
-         evalMax(k, upd[k]);
-      }
-   };
-
-   auto scanDense = [&](auto skipFn) {
-      /* In this case, the indices of the semi-sparse Vector update.delta() are not set up and are filled below. */
-      int* l_idx = update.delta().altIndexMem();
-      R* uval = update.delta().altValues();
-      const int dim = update.dim();
-
-      for(int k = 0; k < dim; ++k)
-      {
-         const R xv = uval[k];
-         if(xv != 0.0)
-         {
-            if(xv >= negEpsZero && xv <= epsZero)
-            {
-               uval[k] = 0.0;
-               continue;
-            }
-            *l_idx++ = k;
-
-            if(skipFn(k))
-               continue;
-
-            evalMax(k, xv);
-         }
-      }
-
-      update.delta().setSize(int(l_idx - update.delta().indexMem()));
-      update.delta().forceSetup();
-   };
+   detail::FastRTMaxEval<R> evalMax{
+      up, low, vec, epsZero, negEpsZero, inf, negInf, fdelta,
+      fastDivSkip, kSkipSlack, kSafeLo, kSafeHi, mabs, max, maxSafe, maxSlack, sel};
 
    /* in the dual algorithm, bound flips cannot happen, hence we only consider nonbasic variables */
    auto skipLeaving = [&](int k) { return stat[k] * repSign > 0; };
@@ -272,20 +483,20 @@ int SPxFastRT<R>::maxDelta(
    if(update.delta().isSetup())
    {
       if(leaving)
-         scanSetup(skipLeaving);
+         detail::scanFastRTSetup(update, start, incr, skipLeaving, evalMax);
       else if(!enterrowrep)
-         scanSetup(skipNone);
+         detail::scanFastRTSetup(update, start, incr, skipNone, evalMax);
       else
-         scanSetup(skipFixedEnterRow);
+         detail::scanFastRTSetup(update, start, incr, skipFixedEnterRow, evalMax);
    }
    else
    {
       if(leaving)
-         scanDense(skipLeaving);
+         detail::scanFastRTDense(update, epsZero, negEpsZero, skipLeaving, evalMax);
       else if(!enterrowrep)
-         scanDense(skipNone);
+         detail::scanFastRTDense(update, epsZero, negEpsZero, skipNone, evalMax);
       else
-         scanDense(skipFixedEnterRow);
+         detail::scanFastRTDense(update, epsZero, negEpsZero, skipFixedEnterRow, evalMax);
    }
 
    val = max;
@@ -326,125 +537,13 @@ int SPxFastRT<R>::minDelta(
    const R kSkipSlack = R(1) + R(1e-12);
    const R kSafeLo = R(1e-140);
    const R kSafeHi = R(1e140);
+   const R initAmax = -max;
+   bool maxSafe = fastDivSkip && (initAmax > kSafeLo && initAmax < kSafeHi);
+   R amaxSlack = maxSafe ? initAmax * kSkipSlack : R(0);
 
-   auto evalMin = [&](int k, R xv) {
-      if(xv > epsZero)
-      {
-         // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
-         mabs = (xv > mabs) ? xv : mabs;
-         const R l = low[k];
-
-         if(l > negInf)
-         {
-            const R y = l - vec[k];
-
-            if(y >= 0)
-            {
-               const R ratio = -fdelta / xv;
-               if(ratio > max)
-               {
-                  max = ratio;
-                  sel = k;
-               }
-            }
-            else
-            {
-               const R numer = y - fdelta;
-               const R amax = -max;
-               if(!fastDivSkip || amax <= kSafeLo || amax >= kSafeHi || xv <= kSafeLo || xv >= kSafeHi
-                     || -numer <= (amax * xv) * kSkipSlack)
-               {
-                  const R ratio = numer / xv;
-                  if(ratio > max)
-                  {
-                     max = ratio;
-                     sel = k;
-                  }
-               }
-            }
-         }
-      }
-      else if(xv < negEpsZero)
-      {
-         // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
-         mabs = (-xv > mabs) ? -xv : mabs;
-         const R u = up[k];
-
-         if(u < inf)
-         {
-            const R y = u - vec[k];
-
-            if(y <= 0)
-            {
-               const R ratio = fdelta / xv;
-               if(ratio > max)
-               {
-                  max = ratio;
-                  sel = k;
-               }
-            }
-            else
-            {
-               const R numer = y + fdelta;
-               const R amax = -max;
-               const R axv = -xv;
-               if(!fastDivSkip || amax <= kSafeLo || amax >= kSafeHi || axv <= kSafeLo || axv >= kSafeHi
-                     || numer <= (amax * axv) * kSkipSlack)
-               {
-                  const R ratio = numer / xv;
-                  if(ratio > max)
-                  {
-                     max = ratio;
-                     sel = k;
-                  }
-               }
-            }
-         }
-      }
-   };
-
-   auto scanSetup = [&](auto skipFn) {
-      const R* SOPLEX_RESTRICT upd = update.delta().values();
-      const int* idx = update.delta().indexMem();
-      const int* last = idx + update.delta().size();
-
-      for(idx += start; idx < last; idx += incr)
-      {
-         const int k = *idx;
-         if(skipFn(k))
-            continue;
-         evalMin(k, upd[k]);
-      }
-   };
-
-   auto scanDense = [&](auto skipFn) {
-      /* In this case, the indices of the semi-sparse VectorBase<R> update.delta() are not set up and are filled below. */
-      int* l_idx = update.delta().altIndexMem();
-      R* uval = update.delta().altValues();
-      const int dim = update.dim();
-
-      for(int k = 0; k < dim; ++k)
-      {
-         const R xv = uval[k];
-         if(xv != 0.0)
-         {
-            if(xv >= negEpsZero && xv <= epsZero)
-            {
-               uval[k] = 0.0;
-               continue;
-            }
-            *l_idx++ = k;
-
-            if(skipFn(k))
-               continue;
-
-            evalMin(k, xv);
-         }
-      }
-
-      update.delta().setSize(int(l_idx - update.delta().indexMem()));
-      update.delta().forceSetup();
-   };
+   detail::FastRTMinEval<R> evalMin{
+      up, low, vec, epsZero, negEpsZero, inf, negInf, fdelta,
+      fastDivSkip, kSkipSlack, kSafeLo, kSafeHi, mabs, max, maxSafe, amaxSlack, sel};
 
    /* in the dual algorithm, bound flips cannot happen, hence we only consider nonbasic variables */
    auto skipLeaving = [&](int k) { return stat[k] * repSign > 0; };
@@ -459,20 +558,20 @@ int SPxFastRT<R>::minDelta(
    if(update.delta().isSetup())
    {
       if(leaving)
-         scanSetup(skipLeaving);
+         detail::scanFastRTSetup(update, start, incr, skipLeaving, evalMin);
       else if(!enterrowrep)
-         scanSetup(skipNone);
+         detail::scanFastRTSetup(update, start, incr, skipNone, evalMin);
       else
-         scanSetup(skipFixedEnterRow);
+         detail::scanFastRTSetup(update, start, incr, skipFixedEnterRow, evalMin);
    }
    else
    {
       if(leaving)
-         scanDense(skipLeaving);
+         detail::scanFastRTDense(update, epsZero, negEpsZero, skipLeaving, evalMin);
       else if(!enterrowrep)
-         scanDense(skipNone);
+         detail::scanFastRTDense(update, epsZero, negEpsZero, skipNone, evalMin);
       else
-         scanDense(skipFixedEnterRow);
+         detail::scanFastRTDense(update, epsZero, negEpsZero, skipFixedEnterRow, evalMin);
    }
 
    val = max;

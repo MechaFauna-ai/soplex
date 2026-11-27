@@ -49,10 +49,13 @@
 
 #if defined(_MSC_VER)
 #define SOPLEX_RESTRICT __restrict
+#define SOPLEX_ALWAYS_INLINE __forceinline
 #elif defined(__GNUC__) || defined(__clang__)
 #define SOPLEX_RESTRICT __restrict__
+#define SOPLEX_ALWAYS_INLINE __attribute__((always_inline)) inline
 #else
 #define SOPLEX_RESTRICT
+#define SOPLEX_ALWAYS_INLINE inline
 #endif
 
 #include <assert.h>
