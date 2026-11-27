@@ -118,159 +118,199 @@ int SPxFastRT<R>::maxDelta(
    int i, sel;
    R x, y, max;
    R u, l;
-   bool leaving = this->m_type == SPxSolverBase<R>::LEAVE;
-   bool enterrowrep = !leaving && this->thesolver->theRep == SPxSolverBase<R>::ROW;
+   const bool leaving = this->m_type == SPxSolverBase<R>::LEAVE;
+   const bool enterrowrep = !leaving && this->thesolver->theRep == SPxSolverBase<R>::ROW;
 
    R mabs = maxabs;
 
-   const R* up = upBound.get_const_ptr();
-   const R* low = lowBound.get_const_ptr();
-   const R* vec = update.get_const_ptr();
-   const R* upd = update.delta().values();
+   const R* __restrict__ up = upBound.get_const_ptr();
+   const R* __restrict__ low = lowBound.get_const_ptr();
+   const R* __restrict__ vec = update.get_const_ptr();
+   const R* __restrict__ upd = update.delta().values();
    const int* idx = update.delta().indexMem();
+   const R epsZero = epsilonZero();
+   const R negEpsZero = -epsZero;
+   const R inf = R(infinity);
+   const R negInf = R(-infinity);
+   const R fdelta = fastDelta;
+   const typename SPxBasisBase<R>::Desc::Status* __restrict__ stat =
+      leaving ? (iscoid ? this->thesolver->desc().coStatus() : this->thesolver->desc().status()) : nullptr;
+   const int repSign = static_cast<int>(this->thesolver->rep());
+   const bool fastDivSkip = std::is_same<R, double>::value;
 
    sel = -1;
    max = val;
+
+   auto evalMax = [&](int k, R xv) __attribute__((always_inline)) {
+      if(xv > epsZero)
+      {
+         mabs = (xv > mabs) ? xv : mabs;
+         u = up[k];
+
+         if(u < inf)
+         {
+            y = u - vec[k];
+
+            if(y <= 0)
+            {
+               x = fdelta / xv;
+               if(x < max)
+               {
+                  max = x;
+                  sel = k;
+               }
+            }
+            else
+            {
+               const R num = y + fdelta;
+               if(!fastDivSkip || max >= inf || max <= 0 || num <= max * xv * (R(1) + R(1e-12)))
+               {
+                  x = num / xv;
+                  if(x < max)
+                  {
+                     max = x;
+                     sel = k;
+                  }
+               }
+            }
+         }
+      }
+      else if(xv < negEpsZero)
+      {
+         mabs = (-xv > mabs) ? -xv : mabs;
+         l = low[k];
+
+         if(l > negInf)
+         {
+            y = l - vec[k];
+
+            if(y >= 0)
+            {
+               x = -fdelta / xv;
+               if(x < max)
+               {
+                  max = x;
+                  sel = k;
+               }
+            }
+            else
+            {
+               const R num = y - fdelta;
+               if(!fastDivSkip || max >= inf || max <= 0 || -num <= max * (-xv) * (R(1) + R(1e-12)))
+               {
+                  x = num / xv;
+                  if(x < max)
+                  {
+                     max = x;
+                     sel = k;
+                  }
+               }
+            }
+         }
+      }
+   };
 
    if(update.delta().isSetup())
    {
       const int* last = idx + update.delta().size();
 
-      for(idx += start; idx < last; idx += incr)
+      if(leaving)
       {
-         i = *idx;
-
-         /* in the dual algorithm, bound flips cannot happen, hence we only consider nonbasic variables */
-         if(leaving && ((iscoid && this->thesolver->isCoBasic(i)) || (!iscoid
-                        && this->thesolver->isBasic(i))))
-            continue;
-
-         if(enterrowrep && this->thesolver->baseId(i).isSPxColId()
-               && this->thesolver->desc().colStatus(this->thesolver->number(SPxColId(this->thesolver->baseId(i))))
-               == SPxBasisBase<R>::Desc::P_FIXED)
-            continue;
-
-         x = upd[i];
-
-         if(x > epsilonZero())
+         for(idx += start; idx < last; idx += incr)
          {
-            // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
-            mabs = (x > mabs) ? x : mabs;
-            u = up[i];
-
-            if(u < R(infinity))
-            {
-               y = u - vec[i];
-
-               if(y <= 0)
-                  x = fastDelta / x;
-               else
-                  x = (y + fastDelta) / x;
-
-               if(x < max)
-               {
-                  max = x;
-                  sel = i;
-               }
-            }
+            i = *idx;
+            if(stat[i] * repSign > 0)
+               continue;
+            evalMax(i, upd[i]);
          }
-         else if(x < -epsilonZero())
+      }
+      else if(!enterrowrep)
+      {
+         for(idx += start; idx < last; idx += incr)
          {
-            // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
-            mabs = (-x > mabs) ? -x : mabs;
-            l = low[i];
-
-            if(l > R(-infinity))
-            {
-               y = l - vec[i];
-
-               if(y >= 0)
-                  x = - fastDelta / x;
-               else
-                  x = (y - fastDelta) / x;
-
-               if(x < max)
-               {
-                  max = x;
-                  sel = i;
-               }
-            }
+            i = *idx;
+            evalMax(i, upd[i]);
+         }
+      }
+      else
+      {
+         for(idx += start; idx < last; idx += incr)
+         {
+            i = *idx;
+            if(this->thesolver->baseId(i).isSPxColId()
+                  && this->thesolver->desc().colStatus(this->thesolver->number(SPxColId(this->thesolver->baseId(i))))
+                  == SPxBasisBase<R>::Desc::P_FIXED)
+               continue;
+            evalMax(i, upd[i]);
          }
       }
    }
    else
    {
-      /* In this case, the indices of the semi-sparse Vector update.delta() are not set up and are filled below. */
       int* l_idx = update.delta().altIndexMem();
       R* uval = update.delta().altValues();
-      const R* uend = uval + update.dim();
+      const int dim = update.dim();
       assert(uval == upd);
 
-      for(i = 0; uval < uend; ++uval, ++i)
+      if(leaving)
       {
-         x = *uval;
-
-         if(x != 0.0)
+         for(i = 0; i < dim; ++i)
          {
-            if(x >= -epsilonZero() && x <= epsilonZero())
+            const R xv = uval[i];
+            if(xv != 0.0)
             {
-               *uval = 0.0;
-               continue;
-            }
-            else
+               if(xv >= negEpsZero && xv <= epsZero)
+               {
+                  uval[i] = 0.0;
+                  continue;
+               }
                *l_idx++ = i;
 
-            /* in the dual algorithm, bound flips cannot happen, hence we only consider nonbasic variables */
-            if(leaving && ((iscoid && this->thesolver->isCoBasic(i)) || (!iscoid
-                           && this->thesolver->isBasic(i))))
-               continue;
+               if(stat[i] * repSign > 0)
+                  continue;
 
-            if(enterrowrep && this->thesolver->baseId(i).isSPxColId()
-                  && this->thesolver->desc().colStatus(this->thesolver->number(SPxColId(this->thesolver->baseId(i))))
-                  == SPxBasisBase<R>::Desc::P_FIXED)
-               continue;
-
-            if(x > epsilonZero())
-            {
-               mabs = (x > mabs) ? x : mabs;
-               u = up[i];
-
-               if(u < R(infinity))
-               {
-                  y = u - vec[i];
-
-                  if(y <= 0)
-                     x = fastDelta / x;
-                  else
-                     x = (y + fastDelta) / x;
-
-                  if(x < max)
-                  {
-                     max = x;
-                     sel = i;
-                  }
-               }
+               evalMax(i, xv);
             }
-            else if(x < -epsilonZero())
+         }
+      }
+      else if(!enterrowrep)
+      {
+         for(i = 0; i < dim; ++i)
+         {
+            const R xv = uval[i];
+            if(xv != 0.0)
             {
-               mabs = (-x > mabs) ? -x : mabs;
-               l = low[i];
-
-               if(l > R(-infinity))
+               if(xv >= negEpsZero && xv <= epsZero)
                {
-                  y = l - vec[i];
-
-                  if(y >= 0)
-                     x = - fastDelta / x;
-                  else
-                     x = (y - fastDelta) / x;
-
-                  if(x < max)
-                  {
-                     max = x;
-                     sel = i;
-                  }
+                  uval[i] = 0.0;
+                  continue;
                }
+               *l_idx++ = i;
+
+               evalMax(i, xv);
+            }
+         }
+      }
+      else
+      {
+         for(i = 0; i < dim; ++i)
+         {
+            const R xv = uval[i];
+            if(xv != 0.0)
+            {
+               if(xv >= negEpsZero && xv <= epsZero)
+               {
+                  uval[i] = 0.0;
+                  continue;
+               }
+               *l_idx++ = i;
+
+               if(this->thesolver->baseId(i).isSPxColId()
+                     && this->thesolver->desc().colStatus(this->thesolver->number(SPxColId(this->thesolver->baseId(i))))
+                     == SPxBasisBase<R>::Desc::P_FIXED)
+                  continue;
+
+               evalMax(i, xv);
             }
          }
       }
@@ -298,159 +338,199 @@ int SPxFastRT<R>::minDelta(
    int i, sel;
    R x, y, max;
    R u, l;
-   bool leaving = (this->m_type == SPxSolverBase<R>::LEAVE);
-   bool enterrowrep = !leaving && this->thesolver->theRep == SPxSolverBase<R>::ROW;
+   const bool leaving = (this->m_type == SPxSolverBase<R>::LEAVE);
+   const bool enterrowrep = !leaving && this->thesolver->theRep == SPxSolverBase<R>::ROW;
 
    R mabs = maxabs;
 
-   const R* up = upBound.get_const_ptr();
-   const R* low = lowBound.get_const_ptr();
-   const R* vec = update.get_const_ptr();
-   const R* upd = update.delta().values();
+   const R* __restrict__ up = upBound.get_const_ptr();
+   const R* __restrict__ low = lowBound.get_const_ptr();
+   const R* __restrict__ vec = update.get_const_ptr();
+   const R* __restrict__ upd = update.delta().values();
    const int* idx = update.delta().indexMem();
+   const R epsZero = epsilonZero();
+   const R negEpsZero = -epsZero;
+   const R inf = R(infinity);
+   const R negInf = R(-infinity);
+   const R fdelta = fastDelta;
+   const typename SPxBasisBase<R>::Desc::Status* __restrict__ stat =
+      leaving ? (iscoid ? this->thesolver->desc().coStatus() : this->thesolver->desc().status()) : nullptr;
+   const int repSign = static_cast<int>(this->thesolver->rep());
+   const bool fastDivSkip = std::is_same<R, double>::value;
 
    sel = -1;
    max = val;
+
+   auto evalMin = [&](int k, R xv) __attribute__((always_inline)) {
+      if(xv > epsZero)
+      {
+         mabs = (xv > mabs) ? xv : mabs;
+         l = low[k];
+
+         if(l > negInf)
+         {
+            y = l - vec[k];
+
+            if(y >= 0)
+            {
+               x = -fdelta / xv;
+               if(x > max)
+               {
+                  max = x;
+                  sel = k;
+               }
+            }
+            else
+            {
+               const R num = y - fdelta;
+               if(!fastDivSkip || max <= negInf || max >= 0 || -num <= (-max) * xv * (R(1) + R(1e-12)))
+               {
+                  x = num / xv;
+                  if(x > max)
+                  {
+                     max = x;
+                     sel = k;
+                  }
+               }
+            }
+         }
+      }
+      else if(xv < negEpsZero)
+      {
+         mabs = (-xv > mabs) ? -xv : mabs;
+         u = up[k];
+
+         if(u < inf)
+         {
+            y = u - vec[k];
+
+            if(y <= 0)
+            {
+               x = fdelta / xv;
+               if(x > max)
+               {
+                  max = x;
+                  sel = k;
+               }
+            }
+            else
+            {
+               const R num = y + fdelta;
+               if(!fastDivSkip || max <= negInf || max >= 0 || num <= (-max) * (-xv) * (R(1) + R(1e-12)))
+               {
+                  x = num / xv;
+                  if(x > max)
+                  {
+                     max = x;
+                     sel = k;
+                  }
+               }
+            }
+         }
+      }
+   };
 
    if(update.delta().isSetup())
    {
       const int* last = idx + update.delta().size();
 
-      for(idx += start; idx < last; idx += incr)
+      if(leaving)
       {
-         i = *idx;
-         x = upd[i];
-
-         /* in the dual algorithm, bound flips cannot happen, hence we only consider nonbasic variables */
-         if(leaving && ((iscoid && this->thesolver->isCoBasic(i)) || (!iscoid
-                        && this->thesolver->isBasic(i))))
-            continue;
-
-         if(enterrowrep && this->thesolver->baseId(i).isSPxColId()
-               && this->thesolver->desc().colStatus(this->thesolver->number(SPxColId(this->thesolver->baseId(i))))
-               == SPxBasisBase<R>::Desc::P_FIXED)
-            continue;
-
-         if(x > epsilonZero())
+         for(idx += start; idx < last; idx += incr)
          {
-            // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
-            mabs = (x > mabs) ? x : mabs;
-            l = low[i];
-
-            if(l > R(-infinity))
-            {
-               y = l - vec[i];
-
-               if(y >= 0)
-                  x = - fastDelta / x;
-               else
-                  x = (y - fastDelta) / x;
-
-               if(x > max)
-               {
-                  max = x;
-                  sel = i;
-               }
-            }
+            i = *idx;
+            if(stat[i] * repSign > 0)
+               continue;
+            evalMin(i, upd[i]);
          }
-         else if(x < -epsilonZero())
+      }
+      else if(!enterrowrep)
+      {
+         for(idx += start; idx < last; idx += incr)
          {
-            // @todo check wether mabs should be computed only over bounded vars, i.e., in the if block below
-            mabs = (-x > mabs) ? -x : mabs;
-            u = up[i];
-
-            if(u < R(infinity))
-            {
-               y = u - vec[i];
-
-               if(y <= 0)
-                  x = fastDelta / x;
-               else
-                  x = (y + fastDelta) / x;
-
-               if(x > max)
-               {
-                  max = x;
-                  sel = i;
-               }
-            }
+            i = *idx;
+            evalMin(i, upd[i]);
+         }
+      }
+      else
+      {
+         for(idx += start; idx < last; idx += incr)
+         {
+            i = *idx;
+            if(this->thesolver->baseId(i).isSPxColId()
+                  && this->thesolver->desc().colStatus(this->thesolver->number(SPxColId(this->thesolver->baseId(i))))
+                  == SPxBasisBase<R>::Desc::P_FIXED)
+               continue;
+            evalMin(i, upd[i]);
          }
       }
    }
    else
    {
-      /* In this case, the indices of the semi-sparse VectorBase<R> update.delta() are not set up and are filled below. */
       int* l_idx = update.delta().altIndexMem();
       R* uval = update.delta().altValues();
-      const R* uend = uval + update.dim();
+      const int dim = update.dim();
       assert(uval == upd);
 
-      for(i = 0; uval < uend; ++uval, ++i)
+      if(leaving)
       {
-         x = *uval;
-
-         if(x != 0.0)
+         for(i = 0; i < dim; ++i)
          {
-            if(x >= -epsilonZero() && x <= epsilonZero())
+            const R xv = uval[i];
+            if(xv != 0.0)
             {
-               *uval = 0.0;
-               continue;
-            }
-            else
+               if(xv >= negEpsZero && xv <= epsZero)
+               {
+                  uval[i] = 0.0;
+                  continue;
+               }
                *l_idx++ = i;
 
-            /* in the dual algorithm, bound flips cannot happen, hence we only consider nonbasic variables */
-            if(leaving && ((iscoid && this->thesolver->isCoBasic(i)) || (!iscoid
-                           && this->thesolver->isBasic(i))))
-               continue;
+               if(stat[i] * repSign > 0)
+                  continue;
 
-            if(enterrowrep && this->thesolver->baseId(i).isSPxColId()
-                  && this->thesolver->desc().colStatus(this->thesolver->number(SPxColId(this->thesolver->baseId(i))))
-                  == SPxBasisBase<R>::Desc::P_FIXED)
-               continue;
-
-
-            if(x > epsilonZero())
-            {
-               mabs = (x > mabs) ? x : mabs;
-               l = low[i];
-
-               if(l > R(-infinity))
-               {
-                  y = l - vec[i];
-
-                  if(y >= 0)
-                     x = - fastDelta / x;
-                  else
-                     x = (y - fastDelta) / x;
-
-                  if(x > max)
-                  {
-                     max = x;
-                     sel = i;
-                  }
-               }
+               evalMin(i, xv);
             }
-            else if(x < -epsilonZero())
+         }
+      }
+      else if(!enterrowrep)
+      {
+         for(i = 0; i < dim; ++i)
+         {
+            const R xv = uval[i];
+            if(xv != 0.0)
             {
-               mabs = (-x > mabs) ? -x : mabs;
-               u = up[i];
-
-               if(u < R(infinity))
+               if(xv >= negEpsZero && xv <= epsZero)
                {
-                  y = u - vec[i];
-
-                  if(y <= 0)
-                     x = fastDelta / x;
-                  else
-                     x = (y + fastDelta) / x;
-
-                  if(x > max)
-                  {
-                     max = x;
-                     sel = i;
-                  }
+                  uval[i] = 0.0;
+                  continue;
                }
+               *l_idx++ = i;
+
+               evalMin(i, xv);
+            }
+         }
+      }
+      else
+      {
+         for(i = 0; i < dim; ++i)
+         {
+            const R xv = uval[i];
+            if(xv != 0.0)
+            {
+               if(xv >= negEpsZero && xv <= epsZero)
+               {
+                  uval[i] = 0.0;
+                  continue;
+               }
+               *l_idx++ = i;
+
+               if(this->thesolver->baseId(i).isSPxColId()
+                     && this->thesolver->desc().colStatus(this->thesolver->number(SPxColId(this->thesolver->baseId(i))))
+                     == SPxBasisBase<R>::Desc::P_FIXED)
+                  continue;
+
+               evalMin(i, xv);
             }
          }
       }
@@ -461,7 +541,6 @@ int SPxFastRT<R>::minDelta(
 
    val = max;
    maxabs = mabs;
-
    return sel;
 }
 

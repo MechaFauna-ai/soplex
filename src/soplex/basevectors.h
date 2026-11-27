@@ -617,13 +617,17 @@ SSVectorBase<R>& SSVectorBase<R>::assign2product1(const SVSetBase<S>& A, const S
       clear();    // this := zero vector
    else
    {
-      num = Ai.size();
+      const int lnum = Ai.size();
+      num = lnum;
+      R* __restrict__ lval = VectorBase<R>::val.data();
+      int* __restrict__ lidx = idx;
+      const Nonzero<S>* __restrict__ elts = Ai.mem();
 
-      for(int j = num - 1; j >= 0; --j)
+      for(int j = lnum - 1; j >= 0; --j)
       {
-         const Nonzero<S>& Aij = Ai.element(j);
-         idx[j] = Aij.idx;
-         VectorBase<R>::val[Aij.idx] = nzval * Aij.val;
+         const int eidx = elts[j].idx;
+         lidx[j] = eidx;
+         lval[eidx] = nzval * elts[j].val;
       }
    }
 
@@ -654,68 +658,70 @@ SSVectorBase<R>& SSVectorBase<R>::assign2productShort(const SVSetBase<S>& A,
    const T x0 = x.val[curidx];
    const SVectorBase<S>& A0 = A[curidx];
    const int xsize = x.size();
+   const R eps = this->getEpsilon();
+   R* __restrict__ lval = VectorBase<R>::val.data();
+   int* __restrict__ lidx = idx;
+   int lnum = num;
    int Aisize;
 
    // If x[0] == 0, do nothing.
-   if(isNotZero(x0, this->getEpsilon()))
+   if(isNotZero(x0, eps))
    {
       Aisize = A0.size();
+      const Nonzero<S>* __restrict__ elts = A0.mem();
 
       for(int j = 0; j < Aisize; ++j)
       {
-         const Nonzero<S>& elt = A0.element(j);
-         const R product = x0 * elt.val;
+         const int eidx = elts[j].idx;
+         const R product = x0 * elts[j].val;
 
-         // count only non-zero values; not 'isNotZero(product, epsilon)'
          if(product != 0)
          {
-            assert(num < len);
-            idx[num++] = elt.idx;
-            VectorBase<R>::val[elt.idx] = product;
+            assert(lnum < len);
+            lidx[lnum++] = eidx;
+            lval[eidx] = product;
          }
       }
    }
 
    // Compute the other x[i] * A[i] and add them to the existing vector.
+   const int* __restrict__ xidx = x.idx;
+   const T* __restrict__ xval = x.val.data();
    for(int i = 1; i < xsize; ++i)
    {
-      curidx = x.idx[i];
-      const T xi = x.val[curidx];
+      curidx = xidx[i];
+      const T xi = xval[curidx];
       const SVectorBase<S>& Ai = A[curidx];
 
       Aisize = Ai.size();
+      const Nonzero<S>* __restrict__ elts = Ai.mem();
 
-      // Compute x[i] * A[i] and add it to the existing vector.
       for(int j = 0; j < Aisize; ++j)
       {
-         const Nonzero<S>& elt = Ai.element(j);
-         const R oldval = VectorBase<R>::val[elt.idx];
-         const R newval = oldval + xi * elt.val;
+         const int eidx = elts[j].idx;
+         const R oldval = lval[eidx];
+         const R newval = oldval + xi * elts[j].val;
 
-         // If the value was positive zero, the position is still unused, so increase the counter.
          if(isPlusZero(oldval))
          {
-            assert(num < len);
-            idx[num++] = elt.idx;
+            assert(lnum < len);
+            lidx[lnum++] = eidx;
          }
 
-         // If the value becomes exactly 0, mark the index as used by setting negative zero.
-         VectorBase<R>::val[elt.idx] = (newval != 0) ? newval : -R(0);
+         lval[eidx] = (newval != 0) ? newval : -R(0);
       }
    }
 
-   // Clean up by shifting all nonzeros (w.r.t. epsilon) to the front of idx,
-   // zeroing all values which are nearly 0, and setting #num# appropriately.
    int nz_counter = 0;
 
-   for(int i = 0; i < num; ++i)
+   for(int i = 0; i < lnum; ++i)
    {
-      curidx = idx[i];
+      curidx = lidx[i];
 
-      if(isZero(VectorBase<R>::val[curidx], this->getEpsilon()))
-         VectorBase<R>::val[curidx] = +R(0);
+      if(isZero(lval[curidx], eps))
+         lval[curidx] = +R(0);
       else
-         idx[nz_counter++] = curidx;
+         lidx[nz_counter++] = curidx;
    }
 
    num = nz_counter;
@@ -746,22 +752,25 @@ SSVectorBase<R>& SSVectorBase<R>::assign2productFull(const SVSetBase<S>& A,
    const int xsize = x.size();
    bool A_is_zero = true;
    int Aisize;
+   R* __restrict__ lval = VectorBase<R>::val.data();
+   const int* __restrict__ xidx = x.idx;
+   const T* __restrict__ xval = x.val.data();
 
    for(int i = 0; i < xsize; ++i)
    {
-      const int curidx = x.idx[i];
-      const T xi = x.val[curidx];
+      const int curidx = xidx[i];
+      const T xi = xval[curidx];
       const SVectorBase<S>& Ai = A[curidx];
       Aisize = Ai.size();
 
-      if(A_is_zero && Aisize > 0)
-         A_is_zero = false;
+      if(Aisize == 0)
+         continue;
+
+      A_is_zero = false;
+      const Nonzero<S>* __restrict__ elts = Ai.mem();
 
       for(int j = 0; j < Aisize; ++j)
-      {
-         const Nonzero<S>& elt = Ai.element(j);
-         VectorBase<R>::val[elt.idx] += xi * elt.val;
-      }
+         lval[elts[j].idx] += xi * elts[j].val;
    }
 
    if(A_is_zero)
