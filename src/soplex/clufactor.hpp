@@ -4315,20 +4315,27 @@ void CLUFactor<R>::solveLleft(R* vec) const
 
 #else
 
+   const int* SOPLEX_RESTRICT rorig = l.rorig;
+   const int* SOPLEX_RESTRICT rbeg = l.rbeg;
+   const int* SOPLEX_RESTRICT ridx = l.ridx;
+   const R* SOPLEX_RESTRICT rval = l.rval.data();
+   R* SOPLEX_RESTRICT v = vec;
+
    for(int i = thedim - 1; i >= 0; --i)
    {
-      int  r = l.rorig[i];
-      R x = vec[r];
+      const int r = rorig[i];
+      const R x = v[r];
 
       if(x != 0)
       {
-         for(int k = l.rbeg[r]; k < l.rbeg[r + 1]; k++)
+         const int end = rbeg[r + 1];
+         for(int k = rbeg[r]; k < end; k++)
          {
-            int j = l.ridx[k];
+            const int j = ridx[k];
 
             assert(l.rperm[j] < i);
 
-            vec[j] -= x * l.rval[k];
+            v[j] -= x * rval[k];
          }
       }
    }

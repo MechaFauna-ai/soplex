@@ -191,12 +191,15 @@ void SPxSteepPR<R>::left4(int n, SPxId id)
 
    if(id.isValid())
    {
-      R        delta         = 0.1 + 1.0 / this->thesolver->basis().iteration();
-      R*       coWeights_ptr = this->thesolver->coWeights.get_ptr();
-      const R* workVec_ptr   = workVec.get_const_ptr();
-      const R* rhoVec        = this->thesolver->fVec().delta().values();
-      R        rhov_1        = 1.0 / rhoVec[n];
-      R        beta_q        = this->thesolver->coPvec().delta().length2() * rhov_1 * rhov_1;
+      const R  delta         = 0.1 + 1.0 / this->thesolver->basis().iteration();
+      R* SOPLEX_RESTRICT coWeights_ptr = this->thesolver->coWeights.get_ptr();
+      const R* SOPLEX_RESTRICT workVec_ptr = workVec.get_const_ptr();
+      const R* SOPLEX_RESTRICT rhoVec      = this->thesolver->fVec().delta().values();
+      const R  rhov_1        = 1.0 / rhoVec[n];
+      const R  two_rhov_1    = 2.0 * rhov_1;
+      const R  beta_q        = this->thesolver->coPvec().delta().length2() * rhov_1 * rhov_1;
+      const R  infVal        = R(infinity);
+      const R  invTol        = 1.0 / this->thetolerance;
 
 #ifndef NDEBUG
 
@@ -210,17 +213,21 @@ void SPxSteepPR<R>::left4(int n, SPxId id)
 #endif
 
       const IdxSet& rhoIdx = this->thesolver->fVec().idx();
-      int           len    = this->thesolver->fVec().idx().size();
+      const int* SOPLEX_RESTRICT rhoIdx_ptr = rhoIdx.indexMem();
+      const int len = rhoIdx.size();
 
       for(int i = 0; i < len; ++i)
       {
-         int  j = rhoIdx.index(i);
-         coWeights_ptr[j] += rhoVec[j] * (beta_q * rhoVec[j] - 2.0 * rhov_1 * workVec_ptr[j]);
+         const int j = rhoIdx_ptr[i];
+         const R rv = rhoVec[j];
+         R w = coWeights_ptr[j] + rv * (beta_q * rv - two_rhov_1 * workVec_ptr[j]);
 
-         if(coWeights_ptr[j] < delta)
-            coWeights_ptr[j] = delta; // coWeights_ptr[j] = delta / (1+delta-x);
-         else if(coWeights_ptr[j] >= R(infinity))
-            coWeights_ptr[j] = 1.0 / this->thetolerance;
+         if(w < delta)
+            w = delta;
+         else if(w >= infVal)
+            w = invTol;
+
+         coWeights_ptr[j] = w;
       }
 
       coWeights_ptr[n] = beta_q;

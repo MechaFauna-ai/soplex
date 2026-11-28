@@ -345,53 +345,63 @@ void SPxSolverBase<R>::updateTest()
 
    const IdxSet& idx = thePvec->idx();
    const typename SPxBasisBase<R>::Desc& ds = this->desc();
-   R pricingTol = leavetol();
+   const R pricingTol = leavetol();
+   const int* SOPLEX_RESTRICT idx_ptr = idx.indexMem();
+   R* SOPLEX_RESTRICT test_ptr = theTest.get_ptr();
+   int* SOPLEX_RESTRICT isInf_ptr = isInfeasibleCo.get_ptr();
+   const bool violUpToDate = m_pricingViolCoUpToDate;
+   const bool sparseEnterCo = sparsePricingEnterCo;
+   const bool hyperEnter = hyperPricingEnter;
+   R pricingViolCo = m_pricingViolCo;
 
-   int i;
    updateViolsCo.clear();
 
-   for(i = idx.size() - 1; i >= 0; --i)
+   for(int i = idx.size() - 1; i >= 0; --i)
    {
-      int j = idx.index(i);
-      typename SPxBasisBase<R>::Desc::Status stat = ds.status(j);
+      const int j = idx_ptr[i];
+      const typename SPxBasisBase<R>::Desc::Status stat = ds.status(j);
 
       if(!isBasic(stat))
       {
-         if(m_pricingViolCoUpToDate && theTest[j] < -pricingTol)
-            m_pricingViolCo += theTest[j];
+         const R oldVal = test_ptr[j];
+         if(violUpToDate && oldVal < -pricingTol)
+            pricingViolCo += oldVal;
 
-         theTest[j] = test(j, stat);
+         const R newVal = test(j, stat);
+         test_ptr[j] = newVal;
 
-         if(sparsePricingEnterCo)
+         if(sparseEnterCo)
          {
-            if(theTest[j] < -pricingTol)
+            if(newVal < -pricingTol)
             {
                assert(remainingRoundsEnterCo == 0);
-               m_pricingViolCo -= theTest[j];
+               pricingViolCo -= newVal;
 
-               if(isInfeasibleCo[j] == SPxPricer<R>::NOT_VIOLATED)
+               if(isInf_ptr[j] == SPxPricer<R>::NOT_VIOLATED)
                {
                   infeasibilitiesCo.addIdx(j);
-                  isInfeasibleCo[j] = SPxPricer<R>::VIOLATED;
+                  isInf_ptr[j] = SPxPricer<R>::VIOLATED;
                }
 
-               if(hyperPricingEnter)
+               if(hyperEnter)
                   updateViolsCo.addIdx(j);
             }
             else
             {
-               isInfeasibleCo[j] = SPxPricer<R>::NOT_VIOLATED;
+               isInf_ptr[j] = SPxPricer<R>::NOT_VIOLATED;
             }
          }
-         else if(theTest[j] < -pricingTol)
-            m_pricingViolCo -= theTest[j];
+         else if(newVal < -pricingTol)
+            pricingViolCo -= newVal;
       }
       else
       {
-         isInfeasibleCo[j] = SPxPricer<R>::NOT_VIOLATED;
-         theTest[j] = 0;
+         isInf_ptr[j] = SPxPricer<R>::NOT_VIOLATED;
+         test_ptr[j] = 0;
       }
    }
+
+   m_pricingViolCo = pricingViolCo;
 }
 
 template <class R>
@@ -401,55 +411,63 @@ void SPxSolverBase<R>::updateCoTest()
 
    const IdxSet& idx = theCoPvec->idx();
    const typename SPxBasisBase<R>::Desc& ds = this->desc();
-   R pricingTol = leavetol();
+   const R pricingTol = leavetol();
+   const int* SOPLEX_RESTRICT idx_ptr = idx.indexMem();
+   R* SOPLEX_RESTRICT cotest_ptr = theCoTest.get_ptr();
+   int* SOPLEX_RESTRICT isInf_ptr = isInfeasible.get_ptr();
+   const bool violUpToDate = m_pricingViolUpToDate;
+   const bool sparseEnter = sparsePricingEnter;
+   const bool hyperEnter = hyperPricingEnter;
+   R pricingViol = m_pricingViol;
 
-   int i;
    updateViols.clear();
 
-   for(i = idx.size() - 1; i >= 0; --i)
+   for(int i = idx.size() - 1; i >= 0; --i)
    {
-      int j = idx.index(i);
-      typename SPxBasisBase<R>::Desc::Status stat = ds.coStatus(j);
+      const int j = idx_ptr[i];
+      const typename SPxBasisBase<R>::Desc::Status stat = ds.coStatus(j);
 
       if(!isBasic(stat))
       {
-         if(m_pricingViolUpToDate && theCoTest[j] < -pricingTol)
-            m_pricingViol += theCoTest[j];
+         const R oldVal = cotest_ptr[j];
+         if(violUpToDate && oldVal < -pricingTol)
+            pricingViol += oldVal;
 
-         theCoTest[j] = coTest(j, stat);
+         const R newVal = coTest(j, stat);
+         cotest_ptr[j] = newVal;
 
-         if(sparsePricingEnter)
+         if(sparseEnter)
          {
-            if(theCoTest[j] < -pricingTol)
+            if(newVal < -pricingTol)
             {
                assert(remainingRoundsEnter == 0);
-               m_pricingViol -= theCoTest[j];
+               pricingViol -= newVal;
 
-               if(isInfeasible[j] == SPxPricer<R>::NOT_VIOLATED)
+               if(isInf_ptr[j] == SPxPricer<R>::NOT_VIOLATED)
                {
-                  //                if( !hyperPricingEnter )
                   infeasibilities.addIdx(j);
-                  isInfeasible[j] = SPxPricer<R>::VIOLATED;
+                  isInf_ptr[j] = SPxPricer<R>::VIOLATED;
                }
 
-               if(hyperPricingEnter)
+               if(hyperEnter)
                   updateViols.addIdx(j);
             }
             else
             {
-               // @todo do we need to remove index j from infeasibilitiesCo?
-               isInfeasible[j] = SPxPricer<R>::NOT_VIOLATED;
+               isInf_ptr[j] = SPxPricer<R>::NOT_VIOLATED;
             }
          }
-         else if(theCoTest[j] < -pricingTol)
-            m_pricingViol -= theCoTest[j];
+         else if(newVal < -pricingTol)
+            pricingViol -= newVal;
       }
       else
       {
-         isInfeasible[j] = SPxPricer<R>::NOT_VIOLATED;
-         theCoTest[j] = 0;
+         isInf_ptr[j] = SPxPricer<R>::NOT_VIOLATED;
+         cotest_ptr[j] = 0;
       }
    }
+
+   m_pricingViol = pricingViol;
 }
 
 

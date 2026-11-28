@@ -129,6 +129,11 @@ public:
       assert(n >= 0 && n < size() && idx != nullptr);
       return idx[n];
    }
+   /// direct pointer to underlying index storage.
+   const int* indexMem() const
+   {
+      return idx;
+   }
    /// returns the number of used indices.
    int size() const
    {
