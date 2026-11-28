@@ -4346,62 +4346,54 @@ void CLUFactor<R>::solveLleft(R* vec) const
 template <class R>
 int CLUFactor<R>::solveLleftEps(R* vec, int* nonz, R eps)
 {
-   int i, j, k, n;
-   int r;
-   R x;
-   R* rval, *val;
-   int* ridx, *idx;
-   int* rbeg;
-   int* rorig;
-
-   ridx = l.ridx;
-   rval = l.rval.data();
-   rbeg = l.rbeg;
-   rorig = l.rorig;
-   n = 0;
+   int n = 0;
 #ifndef SOPLEX_WITH_L_ROWS
-   R* lval = l.val.data();
-   int*  lidx = l.idx;
-   int*  lrow = l.row;
-   int*  lbeg = l.start;
+   const R* SOPLEX_RESTRICT lval = l.val.data();
+   const int* SOPLEX_RESTRICT lidx = l.idx;
+   const int* SOPLEX_RESTRICT lrow = l.row;
+   const int* SOPLEX_RESTRICT lbeg = l.start;
+   R* SOPLEX_RESTRICT v = vec;
 
-   for(i = l.firstUpdate - 1; i >= 0; --i)
+   for(int i = l.firstUpdate - 1; i >= 0; --i)
    {
-      k = lbeg[i];
-      val = &lval[k];
-      idx = &lidx[k];
-      x = 0;
+      const int k = lbeg[i];
+      const int end = lbeg[i + 1];
+      R x = 0;
 
-      for(j = lbeg[i + 1]; j > k; --j)
-         x += vec[*idx++] * (*val++);
+      for(int j = k; j < end; ++j)
+         x += v[lidx[j]] * lval[j];
 
-      vec[lrow[i]] -= x;
+      v[lrow[i]] -= x;
    }
 
 #else
 
-   for(i = thedim; i--;)
+   const int* SOPLEX_RESTRICT ridx = l.ridx;
+   const R* SOPLEX_RESTRICT rval = l.rval.data();
+   const int* SOPLEX_RESTRICT rbeg = l.rbeg;
+   const int* SOPLEX_RESTRICT rorig = l.rorig;
+   R* SOPLEX_RESTRICT v = vec;
+   int* SOPLEX_RESTRICT nz = nonz;
+
+   for(int i = thedim; i--;)
    {
-      r = rorig[i];
-      x = vec[r];
+      const int r = rorig[i];
+      const R x = v[r];
 
       if(isNotZero(x, eps))
       {
-         *nonz++ = r;
-         n++;
-         k = rbeg[r];
-         j = rbeg[r + 1] - k;
-         val = &rval[k];
-         idx = &ridx[k];
+         nz[n++] = r;
+         const int k = rbeg[r];
+         const int end = rbeg[r + 1];
 
-         while(j-- > 0)
+         for(int p = k; p < end; ++p)
          {
-            assert(row.perm[*idx] < i);
-            vec[*idx++] -= x * *val++;
+            assert(row.perm[ridx[p]] < i);
+            v[ridx[p]] -= x * rval[p];
          }
       }
       else
-         vec[r] = 0;
+         v[r] = 0;
    }
 
 #endif
@@ -4412,31 +4404,27 @@ int CLUFactor<R>::solveLleftEps(R* vec, int* nonz, R eps)
 template <class R>
 void CLUFactor<R>::solveUpdateLeft(R* vec)
 {
-   int i, j, k, end;
-   R* lval, *val;
-   int* lrow, *lidx, *idx;
-   int* lbeg;
-
-   lval = l.val.data();
-   lidx = l.idx;
-   lrow = l.row;
-   lbeg = l.start;
+   const R* SOPLEX_RESTRICT lval = l.val.data();
+   const int* SOPLEX_RESTRICT lidx = l.idx;
+   const int* SOPLEX_RESTRICT lrow = l.row;
+   const int* SOPLEX_RESTRICT lbeg = l.start;
+   R* SOPLEX_RESTRICT v = vec;
 
    assert(!l.updateType);               /* Forest-Tomlin Updates */
 
-   end = l.firstUpdate;
+   const int end = l.firstUpdate;
 
-   for(i = l.firstUnused - 1; i >= end; --i)
+   for(int i = l.firstUnused - 1; i >= end; --i)
    {
-      k = lbeg[i];
-      val = &lval[k];
-      idx = &lidx[k];
-      StableSum<R> tmp(-vec[lrow[i]]);
+      const int k = lbeg[i];
+      const int hi = lbeg[i + 1];
+      const int ri = lrow[i];
+      StableSum<R> tmp(-v[ri]);
 
-      for(j = lbeg[i + 1]; j > k; --j)
-         tmp += vec[*idx++] * (*val++);
+      for(int j = k; j < hi; ++j)
+         tmp += v[lidx[j]] * lval[j];
 
-      vec[lrow[i]] = -R(tmp);
+      v[ri] = -R(tmp);
    }
 }
 
@@ -5820,27 +5808,22 @@ int CLUFactor<R>::vSolveUright(R* vec, int* vidx,
 
 template <class R>
 template <bool UseBitQueue>
-int CLUFactor<R>::vSolveUrightImpl(R* vec, int* vidx,
-                               R* rhs, int* ridx, int rn, R eps)
+int CLUFactor<R>::vSolveUrightImpl(R* SOPLEX_RESTRICT vec, int* SOPLEX_RESTRICT vidx,
+                               R* SOPLEX_RESTRICT rhs, int* ridx, int rn, R eps)
 {
    int i, j, k, r, c, n;
-   int* rorig, *corig;
-   int* rperm;
-   int* cidx, *clen, *cbeg;
-   R* cval;
+   const int* SOPLEX_RESTRICT rorig = row.orig;
+   const int* SOPLEX_RESTRICT corig = col.orig;
+   const int* SOPLEX_RESTRICT rperm = row.perm;
+   const int* SOPLEX_RESTRICT cidx = u.col.idx;
+   const R* SOPLEX_RESTRICT cval = u.col.val.data();
+   const int* SOPLEX_RESTRICT clen = u.col.len;
+   const int* SOPLEX_RESTRICT cbeg = u.col.start;
+   const R* SOPLEX_RESTRICT diag_ptr = diag.data();
    R x, y;
 
-   int* idx;
-   R* val;
-
-   rorig = row.orig;
-   corig = col.orig;
-   rperm = row.perm;
-
-   cidx = u.col.idx;
-   cval = u.col.val.data();
-   clen = u.col.len;
-   cbeg = u.col.start;
+   const int* SOPLEX_RESTRICT idx;
+   const R* SOPLEX_RESTRICT val;
 
    typename std::conditional<UseBitQueue, CLUFactorBitMaxQueue, CLUFactorHeapMaxQueue>::type queue(ridx, rn);
 
@@ -5862,7 +5845,7 @@ int CLUFactor<R>::vSolveUrightImpl(R* vec, int* vidx,
       r = rorig[i];
       assert(r >= 0 && r < thedim);
 
-      x = diag[r] * rhs[r];
+      x = diag_ptr[r] * rhs[r];
       rhs[r] = 0;
 
       if(isNotZero(x, eps))
@@ -5871,8 +5854,9 @@ int CLUFactor<R>::vSolveUrightImpl(R* vec, int* vidx,
          assert(c >= 0 && c < thedim);
          vidx[n++] = c;
          vec[c] = x;
-         val = &cval[cbeg[c]];
-         idx = &cidx[cbeg[c]];
+         const int beg = cbeg[c];
+         val = &cval[beg];
+         idx = &cidx[beg];
          j = clen[c];
 
          while(j-- > 0)
@@ -5906,7 +5890,7 @@ int CLUFactor<R>::vSolveUrightImpl(R* vec, int* vidx,
             {
                r = rorig[i];
                assert(r >= 0 && r < thedim);
-               x = diag[r] * rhs[r];
+               x = diag_ptr[r] * rhs[r];
                rhs[r] = 0;
 
                if(isNotZero(x, eps))
@@ -5915,8 +5899,9 @@ int CLUFactor<R>::vSolveUrightImpl(R* vec, int* vidx,
                   assert(c >= 0 && c < thedim);
                   vidx[n++] = c;
                   vec[c] = x;
-                  val = &cval[cbeg[c]];
-                  idx = &cidx[cbeg[c]];
+                  const int beg2 = cbeg[c];
+                  val = &cval[beg2];
+                  idx = &cidx[beg2];
                   j = clen[c];
 
                   while(j-- > 0)

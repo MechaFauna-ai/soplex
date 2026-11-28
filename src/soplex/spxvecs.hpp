@@ -562,12 +562,12 @@ void SPxSolverBase<R>::computePvec()
       const SVectorBase<R>& sv = vecs[i];
       const int sz = sv.size();
       const Nonzero<R>* SOPLEX_RESTRICT elem = sv.mem();
-      R sum = 0;
+      StableSum<R> sum;
 
       for(int k = 0; k < sz; ++k)
          sum += elem[k].val * cop[elem[k].idx];
 
-      pvec[i] = sum;
+      pvec[i] = R(sum);
    }
 }
 
