@@ -196,10 +196,9 @@ void SPxSteepPR<R>::left4(int n, SPxId id)
       const R* SOPLEX_RESTRICT workVec_ptr = workVec.get_const_ptr();
       const R* SOPLEX_RESTRICT rhoVec      = this->thesolver->fVec().delta().values();
       const R  rhov_1        = 1.0 / rhoVec[n];
-      const R  two_rhov_1    = 2.0 * rhov_1;
+      const auto two_rhov_1  = 2.0 * rhov_1;
       const R  beta_q        = this->thesolver->coPvec().delta().length2() * rhov_1 * rhov_1;
       const R  infVal        = R(infinity);
-      const R  invTol        = 1.0 / this->thetolerance;
 
 #ifndef NDEBUG
 
@@ -225,7 +224,7 @@ void SPxSteepPR<R>::left4(int n, SPxId id)
          if(w < delta)
             w = delta;
          else if(w >= infVal)
-            w = invTol;
+            w = 1.0 / this->thetolerance;
 
          coWeights_ptr[j] = w;
       }
@@ -513,7 +512,6 @@ void SPxSteepPR<R>::entered4(SPxId /* id */, int n)
       const int* SOPLEX_RESTRICT coPidx_ptr = coPidx.indexMem();
       const R xi_p = 1 / this->thesolver->fVec().delta()[n];
       const R infVal = R(infinity);
-      const R invEps = 1.0 / this->thesolver->epsilon();
 
       assert(this->thesolver->fVec().delta()[n] > this->thesolver->epsilon()
              || this->thesolver->fVec().delta()[n] < -this->thesolver->epsilon());
@@ -527,7 +525,7 @@ void SPxSteepPR<R>::entered4(SPxId /* id */, int n)
          if(w < delta)
             w = delta;
          else if(w > infVal)
-            w = invEps;
+            w = 1 / this->thesolver->epsilon();
 
          coWeights_ptr[i] = w;
       }
@@ -541,7 +539,7 @@ void SPxSteepPR<R>::entered4(SPxId /* id */, int n)
          if(w < delta)
             w = delta;
          else if(w > infVal)
-            w = invEps;
+            w = 1 / this->thesolver->epsilon();
 
          weights_ptr[i] = w;
       }
