@@ -552,10 +552,23 @@ void SPxSolverBase<R>::computeLeaveCoPrhs()
 template <class R>
 void SPxSolverBase<R>::computePvec()
 {
-   int i;
+   const int n = coDim();
+   R* SOPLEX_RESTRICT pvec = thePvec->get_ptr();
+   const R* SOPLEX_RESTRICT cop = theCoPvec->get_const_ptr();
+   const SVSetBase<R>& vecs = *thevectors;
 
-   for(i = coDim() - 1; i >= 0; --i)
-      (*thePvec)[i] = vector(i) * (*theCoPvec);
+   for(int i = 0; i < n; ++i)
+   {
+      const SVectorBase<R>& sv = vecs[i];
+      const int sz = sv.size();
+      const Nonzero<R>* SOPLEX_RESTRICT elem = sv.mem();
+      StableSum<R> sum;
+
+      for(int k = 0; k < sz; ++k)
+         sum += elem[k].val * cop[elem[k].idx];
+
+      pvec[i] = R(sum);
+   }
 }
 
 template <class R>

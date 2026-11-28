@@ -125,78 +125,95 @@ void SPxSolverBase<R>::updateFtest()
    assert(type() == LEAVE);
 
    updateViols.clear();
-   R theeps = entertol();
+   const R theeps = entertol();
+   const int* SOPLEX_RESTRICT idx_ptr = idx.indexMem();
+   R* SOPLEX_RESTRICT ftest_ptr = ftest.get_ptr();
+   const R* SOPLEX_RESTRICT fvec_ptr = theFvec->get_const_ptr();
+   const R* SOPLEX_RESTRICT ub_ptr = theUBbound.get_const_ptr();
+   const R* SOPLEX_RESTRICT lb_ptr = theLBbound.get_const_ptr();
+   int* SOPLEX_RESTRICT isInf_ptr = isInfeasible.get_ptr();
+   const bool violUpToDate = m_pricingViolUpToDate;
+   const bool sparseLeave = sparsePricingLeave;
+   const bool hyperLeave = hyperPricingLeave;
+   R pricingViol = m_pricingViol;
 
    for(int j = idx.size() - 1; j >= 0; --j)
    {
-      int i = idx.index(j);
+      const int i = idx_ptr[j];
+      const R oldVal = ftest_ptr[i];
 
-      if(m_pricingViolUpToDate && ftest[i] < -theeps)
+      if(violUpToDate && oldVal < -theeps)
          // violation was present before this iteration
-         m_pricingViol += ftest[i];
+         pricingViol += oldVal;
 
-      ftest[i] = ((*theFvec)[i] > theUBbound[i])
-                 ? theUBbound[i] - (*theFvec)[i]
-                 : (*theFvec)[i] - theLBbound[i];
+      const R fi = fvec_ptr[i];
+      const R ubi = ub_ptr[i];
+      const R newVal = (fi > ubi) ? (ubi - fi) : (fi - lb_ptr[i]);
+      ftest_ptr[i] = newVal;
 
-      if(sparsePricingLeave && ftest[i] < -theeps)
+      if(newVal < -theeps)
       {
-         assert(remainingRoundsLeave == 0);
+         if(violUpToDate)
+            pricingViol -= newVal;
 
-         if(m_pricingViolUpToDate)
-            m_pricingViol -= ftest[i];
-
-         if(isInfeasible[i] == SPxPricer<R>::NOT_VIOLATED)
+         if(sparseLeave)
          {
-            // this can cause problems - we cannot keep on adding indeces to infeasibilities,
-            // because they are not deleted in hyper mode...
-            //             if( !hyperPricingLeave )
-            infeasibilities.addIdx(i);
-            isInfeasible[i] = SPxPricer<R>::VIOLATED;
-         }
+            assert(remainingRoundsLeave == 0);
 
-         if(hyperPricingLeave)
-            updateViols.addIdx(i);
+            if(isInf_ptr[i] == SPxPricer<R>::NOT_VIOLATED)
+            {
+               infeasibilities.addIdx(i);
+               isInf_ptr[i] = SPxPricer<R>::VIOLATED;
+            }
+
+            if(hyperLeave)
+               updateViols.addIdx(i);
+         }
       }
-      else if(m_pricingViolUpToDate && ftest[i] < -theeps)
-         m_pricingViol -= ftest[i];
    }
 
    // if boundflips were performed, we need to update these indices as well
    if(boundflips > 0)
    {
-      R eps = epsilon();
+      const R eps = epsilon();
+      const int sv3size = solveVector3->size();
 
-      for(int j = 0; j < solveVector3->size(); ++j)
+      for(int j = 0; j < sv3size; ++j)
       {
          if(spxAbs(solveVector3->value(j)) > eps)
          {
-            int i = solveVector3->index(j);
+            const int i = solveVector3->index(j);
+            const R oldVal = ftest_ptr[i];
 
-            if(m_pricingViolUpToDate && ftest[i] < -theeps)
-               m_pricingViol += ftest[i];
+            if(violUpToDate && oldVal < -theeps)
+               pricingViol += oldVal;
 
-            ftest[i] = ((*theFvec)[i] > theUBbound[i]) ? theUBbound[i] - (*theFvec)[i] :
-                       (*theFvec)[i] - theLBbound[i];
+            const R fi = fvec_ptr[i];
+            const R ubi = ub_ptr[i];
+            const R newVal = (fi > ubi) ? (ubi - fi) : (fi - lb_ptr[i]);
+            ftest_ptr[i] = newVal;
 
-            if(sparsePricingLeave && ftest[i] < -theeps)
+            if(newVal < -theeps)
             {
-               assert(remainingRoundsLeave == 0);
+               if(violUpToDate)
+                  pricingViol -= newVal;
 
-               if(m_pricingViolUpToDate)
-                  m_pricingViol -= ftest[i];
-
-               if(!isInfeasible[i])
+               if(sparseLeave)
                {
-                  infeasibilities.addIdx(i);
-                  isInfeasible[i] = true;
+                  assert(remainingRoundsLeave == 0);
+
+                  if(!isInf_ptr[i])
+                  {
+                     infeasibilities.addIdx(i);
+                     isInf_ptr[i] = true;
+                  }
                }
             }
-            else if(m_pricingViolUpToDate && ftest[i] < -theeps)
-               m_pricingViol -= ftest[i];
          }
       }
    }
+
+   m_pricingViol = pricingViol;
 }
 
 

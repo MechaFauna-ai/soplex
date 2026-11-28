@@ -191,12 +191,14 @@ void SPxSteepPR<R>::left4(int n, SPxId id)
 
    if(id.isValid())
    {
-      R        delta         = 0.1 + 1.0 / this->thesolver->basis().iteration();
-      R*       coWeights_ptr = this->thesolver->coWeights.get_ptr();
-      const R* workVec_ptr   = workVec.get_const_ptr();
-      const R* rhoVec        = this->thesolver->fVec().delta().values();
-      R        rhov_1        = 1.0 / rhoVec[n];
-      R        beta_q        = this->thesolver->coPvec().delta().length2() * rhov_1 * rhov_1;
+      const R  delta         = 0.1 + 1.0 / this->thesolver->basis().iteration();
+      R* SOPLEX_RESTRICT coWeights_ptr = this->thesolver->coWeights.get_ptr();
+      const R* SOPLEX_RESTRICT workVec_ptr = workVec.get_const_ptr();
+      const R* SOPLEX_RESTRICT rhoVec      = this->thesolver->fVec().delta().values();
+      const R  rhov_1        = 1.0 / rhoVec[n];
+      const auto two_rhov_1  = 2.0 * rhov_1;
+      const R  beta_q        = this->thesolver->coPvec().delta().length2() * rhov_1 * rhov_1;
+      const R  infVal        = R(infinity);
 
 #ifndef NDEBUG
 
@@ -210,17 +212,21 @@ void SPxSteepPR<R>::left4(int n, SPxId id)
 #endif
 
       const IdxSet& rhoIdx = this->thesolver->fVec().idx();
-      int           len    = this->thesolver->fVec().idx().size();
+      const int* SOPLEX_RESTRICT rhoIdx_ptr = rhoIdx.indexMem();
+      const int len = rhoIdx.size();
 
       for(int i = 0; i < len; ++i)
       {
-         int  j = rhoIdx.index(i);
-         coWeights_ptr[j] += rhoVec[j] * (beta_q * rhoVec[j] - 2.0 * rhov_1 * workVec_ptr[j]);
+         const int j = rhoIdx_ptr[i];
+         const R rv = rhoVec[j];
+         R w = coWeights_ptr[j] + rv * (beta_q * rv - two_rhov_1 * workVec_ptr[j]);
 
-         if(coWeights_ptr[j] < delta)
-            coWeights_ptr[j] = delta; // coWeights_ptr[j] = delta / (1+delta-x);
-         else if(coWeights_ptr[j] >= R(infinity))
-            coWeights_ptr[j] = 1.0 / this->thetolerance;
+         if(w < delta)
+            w = delta;
+         else if(w >= infVal)
+            w = 1.0 / this->thetolerance;
+
+         coWeights_ptr[j] = w;
       }
 
       coWeights_ptr[n] = beta_q;
@@ -494,53 +500,48 @@ void SPxSteepPR<R>::entered4(SPxId /* id */, int n)
 
    if(n >= 0 && n < this->thesolver->dim())
    {
-      R delta = 2 + 1.0 / this->thesolver->basis().iteration();
-      R* coWeights_ptr = this->thesolver->coWeights.get_ptr();
-      R* weights_ptr = this->thesolver->weights.get_ptr();
-      const R* workVec_ptr = workVec.get_const_ptr();
-      const R* pVec = this->thesolver->pVec().delta().values();
+      const R delta = 2 + 1.0 / this->thesolver->basis().iteration();
+      R* SOPLEX_RESTRICT coWeights_ptr = this->thesolver->coWeights.get_ptr();
+      R* SOPLEX_RESTRICT weights_ptr = this->thesolver->weights.get_ptr();
+      const R* SOPLEX_RESTRICT workVec_ptr = workVec.get_const_ptr();
+      const R* SOPLEX_RESTRICT pVec = this->thesolver->pVec().delta().values();
       const IdxSet& pIdx = this->thesolver->pVec().idx();
-      const R* coPvec = this->thesolver->coPvec().delta().values();
+      const int* SOPLEX_RESTRICT pIdx_ptr = pIdx.indexMem();
+      const R* SOPLEX_RESTRICT coPvec = this->thesolver->coPvec().delta().values();
       const IdxSet& coPidx = this->thesolver->coPvec().idx();
-      R xi_p = 1 / this->thesolver->fVec().delta()[n];
-      int i, j;
-      R xi_ip;
+      const int* SOPLEX_RESTRICT coPidx_ptr = coPidx.indexMem();
+      const R xi_p = 1 / this->thesolver->fVec().delta()[n];
+      const R infVal = R(infinity);
 
       assert(this->thesolver->fVec().delta()[n] > this->thesolver->epsilon()
              || this->thesolver->fVec().delta()[n] < -this->thesolver->epsilon());
 
-      for(j = coPidx.size() - 1; j >= 0; --j)
+      for(int j = coPidx.size() - 1; j >= 0; --j)
       {
-         i = coPidx.index(j);
-         xi_ip = xi_p * coPvec[i];
-         coWeights_ptr[i] += xi_ip * (xi_ip * pi_p - 2.0 * workVec_ptr[i]);
+         const int i = coPidx_ptr[j];
+         const R xi_ip = xi_p * coPvec[i];
+         R w = coWeights_ptr[i] + xi_ip * (xi_ip * pi_p - 2.0 * workVec_ptr[i]);
 
-         /*
-           if(coWeights_ptr[i] < 1)
-           coWeights_ptr[i] = 1 / (2-x);
-         */
-         if(coWeights_ptr[i] < delta)
-            coWeights_ptr[i] = delta;
-         // coWeights_ptr[i] = 1;
-         else if(coWeights_ptr[i] > R(infinity))
-            coWeights_ptr[i] = 1 / this->thesolver->epsilon();
+         if(w < delta)
+            w = delta;
+         else if(w > infVal)
+            w = 1 / this->thesolver->epsilon();
+
+         coWeights_ptr[i] = w;
       }
 
-      for(j = pIdx.size() - 1; j >= 0; --j)
+      for(int j = pIdx.size() - 1; j >= 0; --j)
       {
-         i = pIdx.index(j);
-         xi_ip = xi_p * pVec[i];
-         weights_ptr[i] += xi_ip * (xi_ip * pi_p - 2.0 * (this->thesolver->vector(i) * workVec));
+         const int i = pIdx_ptr[j];
+         const R xi_ip = xi_p * pVec[i];
+         R w = weights_ptr[i] + xi_ip * (xi_ip * pi_p - 2.0 * (this->thesolver->vector(i) * workVec));
 
-         /*
-           if(weights_ptr[i] < 1)
-           weights_ptr[i] = 1 / (2-x);
-         */
-         if(weights_ptr[i] < delta)
-            weights_ptr[i] = delta;
-         // weights_ptr[i] = 1;
-         else if(weights_ptr[i] > R(infinity))
-            weights_ptr[i] = 1.0 / this->thesolver->epsilon();
+         if(w < delta)
+            w = delta;
+         else if(w > infVal)
+            w = 1 / this->thesolver->epsilon();
+
+         weights_ptr[i] = w;
       }
    }
 
